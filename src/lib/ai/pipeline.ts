@@ -1,5 +1,5 @@
 import { checkScript } from "./check";
-import { generateJson } from "./gemini";
+import { MODEL_FLASH, generateJson } from "./gemini";
 import {
   MAX_BALLOON_WORDS,
   OutlineSchema,
@@ -38,6 +38,7 @@ export function generateScript(input: ComicInput, outline: Outline): Promise<Scr
       `- Setiap hitungan yang disebut di dialog atau narasi wajib dicantumkan di "hitungan" ` +
       `dengan ekspresi mathjs dan hasil yang tertulis. Jangan menghitung sendiri; tulis apa adanya.\n` +
       `- Jangan menambah fakta di luar materi sumber.\n\n${konteks(input)}\n\nOutline:\n${JSON.stringify(outline)}`,
+    MODEL_FLASH,
   );
 }
 

@@ -2,7 +2,8 @@ import "server-only";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 
-const MODEL = "gemini-2.5-flash";
+export const MODEL_LITE = "gemini-3.5-flash-lite";
+export const MODEL_FLASH = "gemini-3.5-flash";
 
 let client: GoogleGenAI | undefined;
 function getClient() {
@@ -11,24 +12,42 @@ function getClient() {
   return (client ??= new GoogleGenAI({ apiKey }));
 }
 
+const RETRYABLE = new Set([429, 500, 503]);
+
+/** Retry otomatis maksimal 3x untuk error sementara (overload, rate limit). */
+async function withRetry<R>(fn: () => Promise<R>, attempts = 3): Promise<R> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const status = (e as { status?: number }).status;
+      if (i >= attempts || status === undefined || !RETRYABLE.has(status)) throw e;
+      await new Promise((r) => setTimeout(r, 2000 * i));
+    }
+  }
+}
+
 /** Panggil Gemini dengan output JSON terstruktur dan validasi dengan zod. */
 export async function generateJson<T extends z.ZodType>(
   schema: T,
   prompt: string,
+  model: string = MODEL_LITE,
 ): Promise<z.infer<T>> {
   const started = Date.now();
-  const res = await getClient().models.generateContent({
-    model: MODEL,
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseJsonSchema: z.toJSONSchema(schema),
-    },
-  });
+  const res = await withRetry(() =>
+    getClient().models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseJsonSchema: z.toJSONSchema(schema),
+      },
+    }),
+  );
   console.info(
     JSON.stringify({
       ai: "gemini",
-      model: MODEL,
+      model,
       tokens: res.usageMetadata?.totalTokenCount,
       ms: Date.now() - started,
     }),

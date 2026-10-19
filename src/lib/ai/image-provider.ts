@@ -1,10 +1,13 @@
 export type PageImageRequest = {
   /** Deskripsi adegan per panel, urut sesuai template layout. Tanpa teks di gambar. */
   panels: { adegan: string; karakter: string[] }[];
-  layoutTemplate: string;
+  /** id template di layouts.ts */
+  layoutId: string;
   gaya: string;
-  /** 1-3 gambar referensi karakter (character sheet). */
-  referenceImageUrls: string[];
+  /** Deskripsi karakter yang muncul, agar wajah dan pakaian konsisten. */
+  karakter: { nama: string; deskripsi: string }[];
+  /** 1-3 gambar referensi karakter (character sheet), sudah dalam bentuk byte. */
+  referenceImages?: { data: Uint8Array; mimeType: string }[];
   premium?: boolean;
 };
 
@@ -12,7 +15,7 @@ export type PageImageResult = {
   image: Uint8Array;
   mimeType: string;
   provider: string;
-  costUsd?: number;
+  model: string;
 };
 
 /** Lapisan abstraksi supaya provider gambar (Nano Banana, OpenAI) mudah diganti. */

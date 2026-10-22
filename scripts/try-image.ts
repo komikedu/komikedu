@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { cropPanels } from "../src/lib/ai/crop";
 import { GeminiImageProvider } from "../src/lib/ai/gemini-image";
 
 async function main() {
@@ -22,6 +23,12 @@ async function main() {
   const file = `tmp/halaman-uji.${ext}`;
   await writeFile(file, res.image);
   console.log(`Tersimpan: ${file} (${res.image.length} byte, model ${res.model})`);
+
+  for (const p of await cropPanels(res.image, "3-satu-atas-dua-bawah")) {
+    const f = `tmp/panel-${p.urutan}.webp`;
+    await writeFile(f, p.image);
+    console.log(`Panel ${p.urutan}: ${f} (${p.width}x${p.height})`);
+  }
 }
 
 main().catch((e) => {

@@ -33,7 +33,7 @@ export function buildPagePrompt(req: PageImageRequest): string {
     chars ? `Karakter harus tampil konsisten (wajah, rambut, pakaian sama di semua panel):\n${chars}` : "",
     req.referenceImages?.length ? "Ikuti desain karakter pada gambar referensi yang dilampirkan." : "",
     "ATURAN KERAS: jangan gambar teks, huruf, angka, balon kata, tanda air, atau logo apa pun. " +
-      "Sisakan ruang kosong di bagian atas panel untuk balon dialog yang ditambahkan terpisah. " +
+      "Isi seluruh area setiap panel dengan gambar adegan; jangan ada kotak, balon, atau area putih kosong di dalam panel. " +
       "Konten ramah anak, tanpa kekerasan.",
   ]
     .filter(Boolean)

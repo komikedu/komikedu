@@ -1,0 +1,16 @@
+import { Comic_Neue } from "next/font/google";
+import { notFound } from "next/navigation";
+import { samplePages } from "@/lib/editor/sample";
+import { EditorShell } from "@/app/comics/[id]/editor/editor-shell";
+
+const comicFont = Comic_Neue({ weight: ["400", "700"], subsets: ["latin"], display: "swap" });
+
+/** Pratinjau editor dengan data contoh, tanpa login. Hanya ada saat development. */
+export default function DevEditorPage() {
+  if (process.env.NODE_ENV === "production") notFound();
+  return (
+    <div className={comicFont.className}>
+      <EditorShell title="Pratinjau editor" fontFamily={comicFont.style.fontFamily} initialPages={samplePages()} kredit={15} />
+    </div>
+  );
+}

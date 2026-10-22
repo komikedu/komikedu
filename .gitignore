@@ -43,3 +43,6 @@ next-env.d.ts
 !.env.example
 
 /tmp
+
+# screenshot referensi pihak ketiga, jangan di-push
+/ref/

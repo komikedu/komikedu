@@ -6,3 +6,10 @@ export function kuotaHabis(e: unknown): boolean {
 }
 
 export const PESAN_KUOTA = "Layanan pembuat gambar sedang tidak tersedia karena batas pemakaian AI sudah tercapai. Kredit sudah dikembalikan. Coba lagi nanti atau hubungi admin.";
+
+/** Keluaran gambar ditolak filter keamanan layanan gambar (Cloudflare "output flagged", atau gambar diblokir moderasi Gemini). */
+export function ditolakFilter(e: unknown): boolean {
+  return e instanceof Error && /flagged|diblokir|tidak mengembalikan gambar/i.test(e.message);
+}
+
+export const PESAN_FILTER = "Gambar ditolak filter keamanan layanan gambar. Coba lagi, atau ubah deskripsi adegannya (hindari benda tajam atau adegan yang bisa dianggap berbahaya). Kredit sudah dikembalikan.";

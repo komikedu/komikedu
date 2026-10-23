@@ -13,6 +13,8 @@ export const ComicInputSchema = z.object({
   /** Tokoh pilihan guru; naskah wajib memakai nama ini. */
   tokoh: z.array(z.object({ nama: z.string(), peran: z.string(), deskripsi: z.string() })).max(4).optional(),
   jumlahHalaman: z.number().int().min(4).max(12),
+  /** Panel per halaman pilihan guru (1 sampai 6). Kosong = AI memilih 2 sampai 4 sesuai isi. */
+  panelPerHalaman: z.number().int().min(1).max(6).nullish(),
 });
 export type ComicInput = z.infer<typeof ComicInputSchema>;
 
@@ -50,7 +52,7 @@ export const PanelSchema = z.object({
 
 const HalamanSchema = z.object({
   urutan: z.number().int().min(1),
-  panel: z.array(PanelSchema).min(1).max(4),
+  panel: z.array(PanelSchema).min(1).max(6),
 });
 
 /** Skema keluaran AI (tanpa layout: layout dipilih guru atau otomatis dari jumlah panel). */

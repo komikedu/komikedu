@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { LANGKAH_CERITA } from "@/lib/comics/schema";
 import type { Flag, Script } from "@/lib/ai/schemas";
+import type { Tokoh } from "@/lib/comics/tokoh";
 import { createClient } from "@/lib/supabase/server";
 import { NaskahView, type NaskahStatus } from "./naskah-view";
 
@@ -18,7 +19,7 @@ export default async function NaskahPage({ params }: { params: Promise<{ id: str
 
   const { data: comic } = await supabase
     .from("comics")
-    .select("id, user_id, judul, topik, jenjang, jumlah_halaman, gaya, naskah_status, naskah_json, naskah_flags, naskah_started_at")
+    .select("id, user_id, judul, topik, jenjang, jumlah_halaman, gaya, tokoh_json, naskah_status, naskah_json, naskah_flags, naskah_started_at")
     .eq("id", id)
     .maybeSingle();
   if (!comic || comic.user_id !== user.id) notFound();
@@ -50,6 +51,7 @@ export default async function NaskahPage({ params }: { params: Promise<{ id: str
         versi={comic.naskah_started_at ?? ""}
         saldo={profil?.saldo_kredit ?? 0}
         adaHalamanEditor={(halamanEditor ?? 0) > 0}
+        tokoh={(comic.tokoh_json as Tokoh[] | null) ?? []}
       />
     </div>
   );

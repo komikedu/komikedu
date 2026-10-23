@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Loader2, Plus, Trash2, X } from "lucide-react";
 import { LAYOUTS } from "@/lib/ai/layouts";
 import { MAX_BALLOON_WORDS, flagMemblokir, type Flag, type Script } from "@/lib/ai/schemas";
 import {
@@ -21,7 +21,9 @@ import {
   terimaPerbaikan,
 } from "@/lib/comics/naskah";
 import { NASKAH_COST } from "@/lib/comics/naskah-edit";
+import { buatNaskahFlow, teksNaskah } from "@/lib/comics/naskah-flow";
 import { GAYA } from "@/lib/comics/schema";
+import type { Tokoh } from "@/lib/comics/tokoh";
 import { approveNaskah, generateNaskah, saveNaskah } from "./actions";
 
 export type NaskahStatus = "none" | "generating" | "review" | "approved" | "error";
@@ -37,6 +39,8 @@ type Props = {
   versi: string;
   saldo: number;
   adaHalamanEditor: boolean;
+  /** Tokoh komik, untuk deskripsi tokoh di prompt Flow */
+  tokoh?: Tokoh[];
   /** Fungsi simpan naskah; bisa diganti untuk halaman pratinjau tanpa login. */
   simpanNaskah?: typeof saveNaskah;
 };
@@ -121,8 +125,86 @@ function Generating() {
   );
 }
 
-function Review({ comicId, naskahAwal, flagsAwal, adaHalamanEditor, saldo, simpanNaskah = saveNaskah }: { comicId: string; naskahAwal: Script; flagsAwal: Flag[]; adaHalamanEditor: boolean; saldo: number; simpanNaskah?: typeof saveNaskah }) {
+/**
+ * Tampilan baca: naskah seperti skrip komik biasa. Per halaman, tiap panel berisi satu paragraf adegan
+ * (apa yang digambar) lalu dialog satu per satu dengan nama tokoh di atas ucapannya.
+ */
+function BacaNaskah({ halaman, flags, keEdit }: { halaman: Script["halaman"]; flags: Flag[]; keEdit: () => void }) {
+  return (
+    <div className="flex flex-col gap-8">
+      {halaman.map((h) => (
+        <section key={h.urutan} aria-label={`Halaman ${h.urutan}`}>
+          <h2 className="border-b border-line pb-2 text-sm font-bold uppercase tracking-widest text-gray-500">
+            Halaman {h.urutan} <span className="font-normal normal-case tracking-normal">· {h.panel.length} panel</span>
+          </h2>
+          <div className="mt-4 flex flex-col gap-6">
+            {[...h.panel]
+              .sort((a, b) => a.urutan - b.urutan)
+              .map((p) => {
+                const tanda = flags.filter((f) => f.halaman === h.urutan && f.panel === p.urutan && flagMemblokir(f)).length;
+                return (
+                  <article key={p.urutan} className="grid grid-cols-[2.5rem_1fr] gap-3">
+                    <span className="text-3xl font-bold leading-none text-gray-300" aria-hidden>
+                      {p.urutan}
+                    </span>
+                    <div className="flex flex-col gap-3">
+                      <h3 className="sr-only">Panel {p.urutan}</h3>
+                      <p className="text-[15px] italic leading-relaxed text-gray-600">
+                        {p.adegan.trim() || <span className="not-italic text-amber-700">Adegan belum diisi.</span>}
+                      </p>
+                      {p.dialog.map((d, i) => (
+                        <div key={i} className={d.jenis === "narasi" ? "rounded bg-surface-muted px-3 py-2" : "border-l-2 border-line pl-3"}>
+                          <p className="text-xs font-bold uppercase tracking-wide text-gray-700">
+                            {d.jenis === "narasi" ? "Narasi" : d.karakter || "?"}
+                            {d.jenis === "pikir" && <span className="ml-1 font-normal normal-case tracking-normal text-gray-500">(berpikir)</span>}
+                          </p>
+                          <p className={`mt-0.5 text-base leading-relaxed ${d.jenis === "pikir" ? "italic" : ""}`}>{d.teks || <span className="text-amber-700">Teks kosong.</span>}</p>
+                        </div>
+                      ))}
+                      {p.dialog.length === 0 && <p className="text-sm text-gray-400">Tanpa dialog.</p>}
+                      {tanda > 0 && (
+                        <p className="flex items-center gap-1.5 text-xs text-amber-800">
+                          <AlertTriangle size={13} /> {tanda} tanda perlu diperbaiki.{" "}
+                          <button type="button" onClick={keEdit} className="font-medium underline">
+                            Buka mode Edit
+                          </button>
+                        </p>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function Review({
+  comicId,
+  judul,
+  gayaId,
+  tokoh,
+  naskahAwal,
+  flagsAwal,
+  adaHalamanEditor,
+  saldo,
+  simpanNaskah = saveNaskah,
+}: {
+  comicId: string;
+  judul: string;
+  gayaId: string | null;
+  tokoh: Tokoh[];
+  naskahAwal: Script;
+  flagsAwal: Flag[];
+  adaHalamanEditor: boolean;
+  saldo: number;
+  simpanNaskah?: typeof saveNaskah;
+}) {
   const router = useRouter();
+  const [mode, setMode] = useState<"baca" | "edit">("baca");
+  const [salin, setSalin] = useState<{ ok: boolean; teks: string } | null>(null);
   const [naskah, setNaskah] = useState<Script>(naskahAwal);
   const [flags, setFlags] = useState<Flag[]>(flagsAwal);
   const [simpan, setSimpan] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
@@ -174,6 +256,21 @@ function Review({ comicId, naskahAwal, flagsAwal, adaHalamanEditor, saldo, simpa
   const saran = flags.length - blokir;
   const belumSiap = blokir > 0 || simpan === "dirty" || simpan === "saving" || simpan === "error";
 
+  async function salinKe(isi: string, ok: string) {
+    try {
+      await navigator.clipboard.writeText(isi);
+      setSalin({ ok: true, teks: ok });
+    } catch {
+      setSalin({ ok: false, teks: "Gagal menyalin. Izinkan akses papan klip di peramban, lalu coba lagi." });
+    }
+  }
+
+  const salinJsonFlow = () => {
+    const json = buatNaskahFlow({ judul, gaya: gayaId, tokoh, naskah });
+    if (json.panel.length === 0) return setSalin({ ok: false, teks: "Belum ada panel beradegan yang bisa disalin." });
+    void salinKe(JSON.stringify(json, null, 2), `JSON ${json.panel.length} panel disalin. Tempel di Google Flow.`);
+  };
+
   function setujui() {
     if (adaHalamanEditor && !window.confirm("Isi editor saat ini akan diganti dengan halaman dari naskah ini. Lanjutkan?")) return;
     startApprove(async () => {
@@ -217,7 +314,51 @@ function Review({ comicId, naskahAwal, flagsAwal, adaHalamanEditor, saldo, simpa
         </p>
       )}
 
-      {halaman.map((h) => (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div role="group" aria-label="Mode tampilan" className="flex rounded-lg border border-line bg-surface p-0.5 text-sm">
+          {(["baca", "edit"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={mode === m}
+              onClick={() => setMode(m)}
+              className={`rounded-md px-4 py-1.5 font-medium ${mode === m ? "bg-brand text-brand-foreground" : "text-gray-600 hover:bg-surface-muted"}`}
+            >
+              {m === "baca" ? "Baca" : "Edit"}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void salinKe(teksNaskah(judul, naskah), "Naskah disalin sebagai teks.")}
+            className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium hover:bg-surface-muted"
+          >
+            <Copy size={14} /> Salin naskah
+          </button>
+          <button
+            type="button"
+            onClick={salinJsonFlow}
+            className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium hover:bg-surface-muted"
+          >
+            <Copy size={14} /> Salin JSON untuk Flow
+          </button>
+        </div>
+      </div>
+      {salin && (
+        <p role={salin.ok ? "status" : "alert"} className={`-mt-3 text-sm ${salin.ok ? "text-emerald-700" : "text-red-700"}`}>
+          {salin.teks}
+        </p>
+      )}
+
+      {mode === "baca" && (
+        <div className="rounded-xl border border-line bg-surface p-5 sm:p-8">
+          <BacaNaskah halaman={halaman} flags={flags} keEdit={() => setMode("edit")} />
+        </div>
+      )}
+
+      {mode === "edit" &&
+        halaman.map((h) => (
         <section key={h.urutan} aria-label={`Halaman ${h.urutan}`} className="rounded-xl border border-line bg-surface p-4">
           <h2 className="text-lg font-semibold">Halaman {h.urutan}</h2>
           <div className="mt-2">
@@ -423,7 +564,7 @@ export function NaskahView(props: Props) {
         {status === "generating" && <Generating />}
 
         {status === "review" && naskah && (
-          <Review key={versi} comicId={comicId} naskahAwal={naskah} flagsAwal={flags} adaHalamanEditor={adaHalamanEditor} saldo={saldo} simpanNaskah={props.simpanNaskah} />
+          <Review key={versi} comicId={comicId} judul={judul} gayaId={ringkasan.gaya} tokoh={props.tokoh ?? []} naskahAwal={naskah} flagsAwal={flags} adaHalamanEditor={adaHalamanEditor} saldo={saldo} simpanNaskah={props.simpanNaskah} />
         )}
 
         {status === "approved" && (

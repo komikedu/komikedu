@@ -7,6 +7,7 @@ import { fromPreset, gambarTokoh, MAX_TOKOH, TOKOH_PRESET, type Tokoh } from "@/
 import { undo, useEditor } from "@/lib/editor/store";
 import { simpanTokoh } from "./actions";
 import { TokohDetail } from "./tokoh-detail";
+import { TombolLengkapi } from "./tombol-lengkapi";
 
 function Avatar({ t, gaya, size }: { t: Pick<Tokoh, "id" | "nama" | "preset" | "potret">; gaya: string | null; size: number }) {
   if (!t.preset && t.potret) {
@@ -251,6 +252,7 @@ export function TokohTab({
               placeholder="Ciri visual, mis. anak laki-laki 10 tahun, rambut keriting, kaos hijau"
               className="w-full rounded border border-line px-2 py-1.5 text-xs"
             />
+            {comicId && <TombolLengkapi comicId={comicId} nama={form.nama} deskripsi={form.deskripsi} onHasil={(d) => setForm({ ...form, deskripsi: d })} disabled={pending} />}
             <button
               type="button"
               disabled={!formValid || pending}

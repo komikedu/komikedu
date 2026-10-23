@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import sharp from "sharp";
-import { kuotaHabis, PESAN_KUOTA } from "@/lib/ai/galat";
+import { ditolakFilter, kuotaHabis, PESAN_FILTER, PESAN_KUOTA } from "@/lib/ai/galat";
 import { getImageProvider } from "@/lib/ai/image-providers";
 import { barisGenerations, rekamPemakaian, type Pemakaian } from "@/lib/ai/usage";
 import { potretTokoh, type GambarReferensi } from "@/lib/comics/referensi-tokoh";
@@ -144,6 +144,7 @@ export async function buatGambarTokoh(
     console.error("buatGambarTokoh gagal", tokohId, jenis, e);
     await admin.rpc("refund_credits", { p_user: userId, p_amount: GAMBAR_TOKOH_COST, p_alasan: `refund ${jenis} tokoh gagal`, p_ref: comicId });
     await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: `${jenis}-tokoh`, provider: provider.name, status: "gagal" }));
+    if (ditolakFilter(e)) return { ok: false, error: PESAN_FILTER, status: 500 };
     return kuotaHabis(e)
       ? { ok: false, error: PESAN_KUOTA, status: 503 }
       : { ok: false, error: `Gagal membuat ${jenis === "potret" ? "potret" : "badan penuh"}. Kredit sudah dikembalikan, silakan coba lagi.`, status: 500 };

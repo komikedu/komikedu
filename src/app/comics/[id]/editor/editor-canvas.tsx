@@ -72,12 +72,27 @@ function PanelView({
   const targets = useRef<SnapTargets | null>(null);
   const selectImage = useEditor((s) => s.selectImage);
 
+  const bgRef = useRef<Konva.Rect>(null);
+
+  // kotak pilihan (Transformer) mengikuti ukuran panel, bukan gambar yang menjulur keluar panel;
+  // Konva tidak memperhitungkan klip saat menghitung kotak sebuah grup
+  useEffect(() => {
+    const g = ref.current;
+    const bg = bgRef.current;
+    if (!g || !bg) return;
+    const asli = g.getClientRect;
+    g.getClientRect = (cfg) => bg.getClientRect(cfg);
+    return () => {
+      g.getClientRect = asli;
+    };
+  }, [panel.visible]);
+
   useEffect(() => {
     if (selected && !cornerMode && !imageMode && ref.current && trRef.current) {
       trRef.current.nodes([ref.current]);
       trRef.current.getLayer()?.batchDraw();
     }
-  }, [selected, cornerMode, imageMode, trRef, panel.w, panel.h, panel.x, panel.y]);
+  }, [selected, cornerMode, imageMode, trRef, panel.w, panel.h, panel.x, panel.y, panel.imageRect]);
 
   if (!panel.visible) return null;
   // titik-titik poligon relatif terhadap pojok kotak pembatas (posisi grup)
@@ -135,7 +150,7 @@ function PanelView({
         resizePanel(panel.id, { x: node.x(), y: node.y(), w, h });
       }}
     >
-      <Rect width={panel.w} height={panel.h} fill="#eef0f3" />
+      <Rect ref={bgRef} width={panel.w} height={panel.h} fill="#eef0f3" />
       {img && <GambarPanel panel={panel} img={img} rect={liveImage} />}
       {(!img || generating) && (
         <>
@@ -469,6 +484,7 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [, setFontTick] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const [scroll, setScroll] = useState({ x: 0, y: 0 });
   const [guides, setGuides] = useState<Guides | null>(null);
   const [liveImage, setLiveImage] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
@@ -507,6 +523,11 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
     document.fonts?.ready.then(() => setFontTick((t) => t + 1));
   }, []);
 
+  // seretan yang terputus (mis. mode gambar dibuka di tengah seretan) tidak boleh menyembunyikan toolbar selamanya
+  useEffect(() => {
+    setDragging(false);
+  }, [selectedId, selectedLayer]);
+
   const selPanel = page?.panels.find((p) => p.id === selectedId) ?? null;
   const selBubble = page?.bubbles.find((b) => b.id === selectedId) ?? null;
   const selElement = page?.elements.find((e) => e.id === selectedId) ?? null;
@@ -539,22 +560,30 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
     else addBubble(panelId, "bicara", cx, cy);
   };
 
-  // toolbar mengambang di atas elemen terpilih (di bawahnya bila tidak ada ruang di atas)
+  // toolbar mengambang di atas elemen terpilih (di bawahnya bila tidak ada ruang di atas), dan selalu
+  // ditahan di area yang terlihat supaya tidak ikut tergulung keluar layar (mis. panel yang tinggi)
   const sel = selPanel ?? selBubble ?? selElement;
+  const tahan = (n: number, min: number, max: number) => Math.max(min, Math.min(n, Math.max(min, max)));
   const toolbar =
     sel && tool === "move" && !dragging
       ? (() => {
           const top = offsetY + sel.y * scale - 52;
+          const ideal = top < 4 ? offsetY + (sel.y + sel.h) * scale + 10 : top;
           return {
-            left: offsetX + (sel.x + sel.w / 2) * scale,
-            top: top < 4 ? offsetY + (sel.y + sel.h) * scale + 10 : top,
+            left: tahan(offsetX + (sel.x + sel.w / 2) * scale, scroll.x + 110, scroll.x + size.w - 110),
+            top: tahan(ideal, scroll.y + 4, scroll.y + size.h - 48),
           };
         })()
       : null;
   const tbBtn = "grid h-8 w-8 place-items-center rounded-lg hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-30";
 
   return (
-    <div ref={wrapRef} className="relative h-full w-full overflow-auto" style={{ cursor: tool === "move" ? "default" : "crosshair" }}>
+    <div
+      ref={wrapRef}
+      onScroll={(e) => setScroll({ x: e.currentTarget.scrollLeft, y: e.currentTarget.scrollTop })}
+      className="relative h-full w-full overflow-auto"
+      style={{ cursor: tool === "move" ? "default" : "crosshair" }}
+    >
       <Stage
         width={Math.max(size.w, PAGE_W * scale + offsetX * 2)}
         height={Math.max(size.h, PAGE_H * scale + offsetY * 2)}

@@ -12,7 +12,7 @@ import { TOKOH_PRESET } from "../src/lib/comics/tokoh";
 
 const SCENE =
   "Dua anak SD Indonesia (perempuan berkuncir dua dan laki-laki berkacamata, seragam putih-merah) " +
-  "tersenyum sambil menghitung kue di meja kelas yang cerah.";
+  "bergembira sambil menghitung kue di meja kelas yang cerah.";
 
 async function main() {
   const id = process.argv[2];

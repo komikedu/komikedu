@@ -152,7 +152,7 @@ export function TombolTerbit({ comicId, awal, penulis, fontFamily, simpanDulu }:
         type="button"
         onClick={bukaDialog}
         title={status.terbit ? "Komik ini ada di komunitas" : "Terbitkan ke komunitas"}
-        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium ${status.terbit ? "border border-brand text-brand hover:bg-brand/5" : "border border-line hover:bg-surface-muted"}`}
+        className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium ${status.terbit ? "border border-brand text-brand hover:bg-brand/5" : "border border-line hover:bg-surface-muted"}`}
       >
         {status.terbit ? <Check size={13} /> : <Globe size={13} />}
         {status.terbit ? "Diterbitkan" : "Terbitkan"}

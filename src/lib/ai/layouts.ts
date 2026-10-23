@@ -90,6 +90,29 @@ export const LAYOUTS: LayoutTemplate[] = [
       { x: 0.5 + G / 2, y: 2 / 3 + G / 2, w: 0.5 - G / 2, h: 1 / 3 - G / 2 },
     ],
   },
+  {
+    id: "5-dua-satu-dua",
+    nama: "Dua panel, satu panel lebar di tengah, lalu dua panel",
+    panels: [
+      { x: 0, y: 0, w: 0.5 - G / 2, h: 0.3 - G / 2 },
+      { x: 0.5 + G / 2, y: 0, w: 0.5 - G / 2, h: 0.3 - G / 2 },
+      { x: 0, y: 0.3 + G / 2, w: 1, h: 0.4 - G },
+      { x: 0, y: 0.7 + G / 2, w: 0.5 - G / 2, h: 0.3 - G / 2 },
+      { x: 0.5 + G / 2, y: 0.7 + G / 2, w: 0.5 - G / 2, h: 0.3 - G / 2 },
+    ],
+  },
+  {
+    id: "6-grid-2x3",
+    nama: "Enam panel grid 2 kolom x 3 baris",
+    panels: [0, 1, 2].flatMap((baris) =>
+      [0, 1].map((kolom) => ({
+        x: kolom === 0 ? 0 : 0.5 + G / 2,
+        y: baris * ((1 - 2 * G) / 3 + G),
+        w: 0.5 - G / 2,
+        h: (1 - 2 * G) / 3,
+      })),
+    ),
+  },
 ];
 
 export const isLayoutId = (id: unknown): id is string => typeof id === "string" && LAYOUTS.some((l) => l.id === id);

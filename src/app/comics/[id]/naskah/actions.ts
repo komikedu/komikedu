@@ -32,7 +32,7 @@ async function ownComic(comicId: string, columns: string) {
  * sehingga job gagal tidak memakan kredit (sesuai PRD).
  */
 export async function generateNaskah(comicId: string): Promise<Result> {
-  const own = await ownComic(comicId, "judul, topik, jenjang, mapel, tujuan, cerita, tokoh_json, jumlah_halaman, gaya, naskah_status");
+  const own = await ownComic(comicId, "judul, topik, jenjang, mapel, tujuan, cerita, tokoh_json, jumlah_halaman, panel_per_halaman, gaya, naskah_status");
   if (!own) return { ok: false, error: "Komik tidak ditemukan" };
   const { supabase, user, comic } = own;
 
@@ -77,6 +77,7 @@ export async function generateNaskah(comicId: string): Promise<Result> {
       cerita: (comic.cerita as string | null) ?? undefined,
       tokoh: ((comic.tokoh_json as Tokoh[] | null) ?? []).map((t) => ({ nama: t.nama, peran: t.peran, deskripsi: t.deskripsi })),
       jumlahHalaman: comic.jumlah_halaman as number,
+      panelPerHalaman: (comic.panel_per_halaman as number | null) ?? null,
     }));
     const judul = comic.judul === "Komik tanpa judul" ? outline.judul.slice(0, 120) : (comic.judul as string);
     const { error } = await admin

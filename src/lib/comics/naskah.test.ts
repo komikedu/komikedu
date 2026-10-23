@@ -202,12 +202,18 @@ describe("layout dan struktur halaman", () => {
     expect(panelTerhapusJikaGantiLayout(hal1(naskah()), "1-penuh")).toBe(2);
   });
 
-  it("tambah panel sampai maksimal 4", () => {
+  it("tambah panel sampai maksimal 6, layout mengikuti jumlah panel", () => {
     let s = tambahPanel(naskah(), 1);
     expect(hal1(s).panel.map((p) => p.urutan)).toEqual([1, 2, 3, 4]);
     expect(layoutHalaman(hal1(s))).toBe("4-grid");
     s = tambahPanel(s, 1);
-    expect(hal1(s).panel).toHaveLength(4);
+    expect(hal1(s).panel).toHaveLength(5);
+    expect(layoutHalaman(hal1(s))).toBe("5-dua-satu-dua");
+    s = tambahPanel(s, 1);
+    expect(hal1(s).panel).toHaveLength(6);
+    expect(layoutHalaman(hal1(s))).toBe("6-grid-2x3");
+    s = tambahPanel(s, 1);
+    expect(hal1(s).panel).toHaveLength(6);
   });
 
   it("hapus panel mengurutkan ulang nomor dan menyisakan minimal 1", () => {

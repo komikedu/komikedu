@@ -1,4 +1,5 @@
 import { checkScript } from "./check";
+import { aturanPanelPerHalaman } from "./panel-prompt";
 import { MODEL_FLASH, generateJson } from "./gemini";
 import {
   AIScriptSchema,
@@ -46,14 +47,13 @@ export function generateScript(input: ComicInput, outline: Outline): Promise<Scr
   return generateJson(
     AIScriptSchema,
     `Tulis naskah komik per halaman dan panel berdasarkan outline berikut. Aturan:\n` +
-      `- Setiap halaman berisi 2 sampai 4 panel.\n` +
+      `${aturanPanelPerHalaman(input.panelPerHalaman)}\n` +
       `- Setiap balon dialog maksimal ${MAX_BALLOON_WORDS} kata, bahasa sesuai kelas ${input.jenjang} SD.\n` +
       `- Deskripsi adegan hanya visual; jangan menyuruh menggambar teks atau angka.\n` +
       `- Setiap hitungan yang disebut di dialog atau narasi wajib dicantumkan di "hitungan" ` +
       `dengan ekspresi mathjs dan hasil yang tertulis. Jangan menghitung sendiri; tulis apa adanya.\n` +
       `- Jangan menuntut jumlah benda yang pasti di deskripsi adegan (mis. "10 apel"); gambar AI sering salah hitung. ` +
-      `Tulis "sekeranjang apel" atau "beberapa kelereng"; jumlah pasti disebut di dialog dan ditambahkan guru lewat Elemen Mat.
-` +
+      `Tulis "sekeranjang apel" atau "beberapa kelereng"; jumlah pasti disebut di dialog dan ditambahkan guru lewat Elemen Mat.\n` +
       `- Jangan menambah fakta di luar materi sumber.\n\n${konteks(input)}\n\nOutline:\n${JSON.stringify(outline)}`,
     MODEL_FLASH,
   );

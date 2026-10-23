@@ -4,9 +4,10 @@ import sharp from "sharp";
 import { generateCharacterSheet, namaTokoh, type KarakterSheet } from "@/lib/ai/characters";
 import { cropPanels } from "@/lib/ai/crop";
 import { getImageProvider } from "@/lib/ai/image-providers";
-import { kuotaHabis, PESAN_KUOTA } from "@/lib/ai/galat";
+import { ditolakFilter, kuotaHabis, PESAN_FILTER, PESAN_KUOTA } from "@/lib/ai/galat";
 import { barisGenerations, rekamPemakaian, type Pemakaian } from "@/lib/ai/usage";
 import { GAYA } from "@/lib/comics/schema";
+import { ambilKunci, syaratKunciBebas } from "@/lib/comics/kunci-generate";
 import { catatVersi } from "@/lib/comics/versi-gambar";
 import { simpanGambar } from "@/lib/storage/gambar";
 import { potretTokoh, punyaPotret } from "@/lib/comics/referensi-tokoh";
@@ -67,9 +68,9 @@ export async function generatePageImage(
   // klaim halaman agar tidak dibuat dua kali bersamaan
   const { data: klaim } = await admin
     .from("panels")
-    .update({ status: "generating" })
+    .update(ambilKunci())
     .eq("page_id", pageId)
-    .neq("status", "generating")
+    .or(syaratKunciBebas())
     .select("id");
   if (!klaim?.length) return { ok: false, error: "Gambar halaman ini sedang dibuat", status: 409 };
 
@@ -189,13 +190,12 @@ export async function generatePageImage(
     await admin.rpc("refund_credits", { p_user: userId, p_amount: GAMBAR_COST, p_alasan: "refund gambar gagal", p_ref: pageId });
     await admin.from("panels").update({ status: "gagal" }).eq("page_id", pageId);
     await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "gambar", provider: provider.name, status: "gagal" }));
-    const diblokir = e instanceof Error && /diblokir|tidak mengembalikan gambar/i.test(e.message);
     return {
       ok: false,
       error: kuotaHabis(e)
         ? PESAN_KUOTA
-        : diblokir
-          ? "Gambar tidak bisa dibuat untuk adegan ini. Coba ubah deskripsi adegannya. Kredit sudah dikembalikan."
+        : ditolakFilter(e)
+          ? PESAN_FILTER
           : "Gagal membuat gambar. Kredit sudah dikembalikan, silakan coba lagi.",
       status: kuotaHabis(e) ? 503 : 500,
     };

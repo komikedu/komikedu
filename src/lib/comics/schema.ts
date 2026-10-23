@@ -33,6 +33,29 @@ export const GAYA = [
       "kartun vektor datar 2D bergaya serial animasi sitkom (flat vector cartoon, sitcom animation style), garis tepi hitam tebal dan seragam, " +
       "warna datar tanpa gradasi, bayangan hanya satu nada tipis, ekspresi karikatur yang dilebih-lebihkan, mata bulat dengan pupil kecil, tampilan vektor bersih",
   },
+  {
+    id: "chibi-petualangan",
+    nama: "Chibi petualangan",
+    deskripsi: "Anime imut, warna cerah, latar fantasi",
+    gambar: "/gaya/chibi-petualangan.webp",
+    prompt:
+      "anime chibi imut berproporsi semi-chibi (cute chibi anime style, semi-chibi proportions), mata besar ekspresif, " +
+      "wajah ceria dan ramah, pewarnaan cel-shaded dengan bayangan 1 sampai 2 nada, " +
+      "warna jenuh yang cerah (vibrant saturated colors), garis tepi bersih, kilau mengkilap (glossy highlights), " +
+      "latar fantasi yang rimbun dan penuh warna (lush colorful fantasy meadow background), ilustrasi game edukasi, kawaii",
+  },
+  {
+    id: "faceless",
+    nama: "Faceless",
+    deskripsi: "Tokoh tanpa wajah, bentuk sederhana, warna datar",
+    gambar: "/gaya/faceless.webp",
+    // Inggris dipertahankan untuk istilah gaya, dan larangan wajah diulang dengan beberapa kata supaya model tidak menggambar mata atau mulut
+    prompt:
+      "ilustrasi vektor datar minimalis bergaya komik faceless (minimalist flat vector faceless comic style), " +
+      "tokoh TANPA WAJAH: kepala berupa bentuk bulat polos tanpa mata, tanpa hidung, tanpa mulut, tanpa alis (smooth blank featureless face, no eyes, no nose, no mouth), " +
+      "tokoh dibedakan lewat rambut, pakaian, aksesori, dan warna kulit, emosi ditunjukkan lewat bahasa tubuh dan posisi tangan, " +
+      "bentuk tubuh sederhana membulat, garis tepi bersih dan tipis, warna datar tanpa gradasi dengan palet terbatas, latar sederhana",
+  },
 ] as const;
 
 export const MAX_CERITA = 2000;
@@ -50,7 +73,9 @@ export const DraftSchema = z.object({
   jenjang: z.number().int().min(1).max(6),
   tujuan: z.string().trim().max(500).nullable(),
   jumlah_halaman: z.number().int().min(4).max(12),
-  gaya: z.enum(["kartun-cerah", "anime-lembut", "buku-cerita", "kartun-sitkom"]).nullable(),
+  /** Panel per halaman (1 sampai 6). null = otomatis: AI memilih 2 sampai 4 sesuai isi halaman. */
+  panel_per_halaman: z.number().int().min(1).max(6).nullable(),
+  gaya: z.enum(["kartun-cerah", "anime-lembut", "buku-cerita", "kartun-sitkom", "chibi-petualangan", "faceless"]).nullable(),
   /** Alur cerita yang ditulis guru (opsional). Kosong = AI yang menentukan cerita. */
   cerita: z.string().trim().max(MAX_CERITA).nullable(),
   /** Tokoh pilihan guru (preset atau buatan sendiri). Kosong = AI yang menentukan tokoh. */

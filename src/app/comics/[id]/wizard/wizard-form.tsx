@@ -18,6 +18,8 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 type NaskahStatus = "none" | "generating" | "review" | "approved" | "error";
 
 const TOPIK_POPULER = ["KPK dan FPB", "Pecahan senilai", "Bangun datar", "Membaca jam", "Perkalian"];
+/** Pilihan jumlah panel per halaman selain Otomatis. */
+const PANEL_PER_HALAMAN = [1, 2, 3, 4, 5, 6] as const;
 const HALAMAN = [4, 6, 8, 10, 12];
 
 const JUDUL: Record<number, { judul: string; sub: string }> = {
@@ -341,17 +343,37 @@ export function WizardForm({
                       </div>
                       <p className="mt-2 text-xs text-gray-500">Mata pelajaran: Matematika. Gambar nanti memakai 1 kredit per halaman.</p>
                     </fieldset>
+                    <fieldset>
+                      <legend className="text-sm font-medium">Panel per halaman</legend>
+                      <div className="mt-2 grid grid-cols-4 gap-2">
+                        <Pilihan aktif={draft.panel_per_halaman === null} onClick={() => update({ panel_per_halaman: null })} className="col-span-2 py-2 text-center font-semibold">
+                          Otomatis
+                        </Pilihan>
+                        {PANEL_PER_HALAMAN.map((n) => (
+                          <Pilihan key={n} aktif={draft.panel_per_halaman === n} onClick={() => update({ panel_per_halaman: n })} className="py-2 text-center font-semibold">
+                            {n}
+                          </Pilihan>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs text-gray-500">
+                        {draft.panel_per_halaman === null
+                          ? "Otomatis: AI memilih 2 sampai 4 panel per halaman sesuai isi ceritanya."
+                          : draft.panel_per_halaman === 1
+                            ? "Satu panel besar per halaman: cocok untuk adegan penuh dan gambar yang detail."
+                            : `Setiap halaman dibagi menjadi ${draft.panel_per_halaman} panel. Semakin banyak panel, semakin kecil tiap gambar. Panel tetap bisa ditambah, dihapus, dan diatur ulang di naskah dan editor.`}
+                      </p>
+                    </fieldset>
                   </div>
                 )}
 
                 {step === 3 && (
                   <fieldset>
                     <legend className="sr-only">Gaya visual</legend>
-                    <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
                       {GAYA.map((g) => (
                         <Pilihan key={g.id} aktif={draft.gaya === g.id} onClick={() => update({ gaya: g.id })} className="overflow-hidden text-left">
                           <span className="relative block aspect-[4/3] w-full">
-                            <Image src={g.gambar} alt="" fill sizes="(min-width: 640px) 260px, 50vw" className="object-cover" />
+                            <Image src={g.gambar} alt="" fill sizes="(min-width: 640px) 180px, 50vw" className="object-cover" />
                           </span>
                           <span className="block px-2 py-2 sm:px-3">
                             <span className="block text-xs font-semibold sm:text-sm">{g.nama}</span>

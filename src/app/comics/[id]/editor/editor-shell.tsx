@@ -21,6 +21,7 @@ import {
   Trash2,
   Type,
   Undo2,
+  Upload,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -32,11 +33,16 @@ import { MAX_PAGES } from "@/lib/editor/persist";
 import { jumlahBendaDiAdegan } from "@/lib/ai/jumlah";
 import { IKON_BENDA, MAX_JUMLAH, MAX_KOLOM, namaIkon } from "@/lib/editor/math-elements";
 import { applyPanelImages, clearHistory, redo, selectSelectedBubble, selectSelectedElement, selectSelectedPanel, undo, useEditor } from "@/lib/editor/store";
-import type { BubbleKind, EditorPage } from "@/lib/editor/types";
+import type { BubbleKind, EditorPage, Panel as EditorPanel } from "@/lib/editor/types";
+import { GAYA } from "@/lib/comics/schema";
+import { alamatPotret, buatPromptFlow, rasioTerdekat, tokohDiTeks } from "@/lib/comics/prompt-flow";
 import type { Tokoh } from "@/lib/comics/tokoh";
 import { AdeganInput, NamaTokohContext } from "./adegan-input";
+import { DialogTokohNaskah } from "./dialog-tokoh-naskah";
+import { kecilkanGambar } from "./kecilkan-gambar";
 import { TokohTab } from "./tokoh-tab";
 import { TombolTerbit } from "./tombol-terbit";
+import { namaBerkasAcuan, unduhPotret } from "./unduh-potret";
 import { useVersiGambar } from "./use-versi-gambar";
 
 const EditorCanvas = dynamic(() => import("./editor-canvas"), {
@@ -106,19 +112,19 @@ function TombolEkspor({ judul, fontFamily }: { judul: string; fontFamily: string
   }
 
   return (
-    <div className="relative">
+    <div className="flex flex-1">
       <button
         type="button"
         onClick={() => void ekspor()}
         disabled={kemajuan !== null}
         title="Unduh seluruh komik sebagai PDF"
-        className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-brand-foreground disabled:opacity-60"
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-brand-foreground disabled:opacity-60"
       >
         {kemajuan ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
         {kemajuan ? `Halaman ${Math.min(kemajuan.selesai + 1, kemajuan.total)}/${kemajuan.total}` : "Ekspor PDF"}
       </button>
       {galat && (
-        <p role="alert" className="absolute right-0 top-full z-30 mt-2 w-64 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700 shadow-lg">
+        <p role="alert" className="absolute inset-x-0 top-full z-30 mt-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700 shadow-lg">
           {galat}
         </p>
       )}
@@ -337,8 +343,137 @@ type EditAiProps = {
   sibuk: string | null;
   /** kembalikan pesan galat, atau null bila berhasil */
   onEdit: (panelId: string, instruksi: string) => Promise<string | null>;
+  /** unggah gambar sendiri ke panel (gratis); kembalikan pesan galat, atau null bila berhasil */
+  onUnggah: (panelId: string, file: File) => Promise<string | null>;
   comicId?: string;
+  tokoh: Tokoh[];
+  gaya: string | null;
 };
+
+/** Prompt siap tempel untuk Google Flow, plus potret tokoh yang bisa diunduh sebagai gambar acuan. */
+function FlowSection({ panel, ai }: { panel: EditorPanel; ai: EditAiProps }) {
+  const bubbles = useEditor((s) => s.pages.find((p) => p.id === s.activePageId)?.bubbles ?? []);
+  const [pesan, setPesan] = useState<{ ok: boolean; teks: string } | null>(null);
+  const [terunduh, setTerunduh] = useState<Record<string, boolean>>({});
+  const adegan = panel.adegan.trim();
+  const tampil = tokohDiTeks(ai.tokoh, [adegan, ...bubbles.filter((b) => b.panelId === panel.id).map((b) => b.text)].join(" "));
+  const bergambar = tampil.filter((t) => alamatPotret(t, ai.gaya));
+  const acuan = Object.fromEntries(bergambar.filter((t) => terunduh[t.nama]).map((t) => [t.nama, namaBerkasAcuan(t.nama)]));
+  const rasio = rasioTerdekat(panel.w, panel.h);
+  const gayaPrompt = (GAYA.find((g) => g.id === ai.gaya) ?? GAYA[0]).prompt;
+  const prompt = adegan ? buatPromptFlow({ adegan, gaya: gayaPrompt, tokoh: tampil, rasio, acuan }) : "";
+
+  async function salin() {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setPesan({ ok: true, teks: "Prompt disalin. Tempel di Google Flow." });
+    } catch {
+      setPesan({ ok: false, teks: "Gagal menyalin. Pilih teks prompt lalu salin manual." });
+    }
+  }
+
+  async function unduh(t: Tokoh) {
+    const url = alamatPotret(t, ai.gaya);
+    const ok = !!url && (await unduhPotret(url, namaBerkasAcuan(t.nama)));
+    if (ok) setTerunduh((s) => ({ ...s, [t.nama]: true }));
+    setPesan(ok ? { ok: true, teks: `Potret ${t.nama} terunduh. Unggah sebagai gambar acuan di Flow.` } : { ok: false, teks: `Gagal mengunduh potret ${t.nama}.` });
+  }
+
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <p className="font-semibold">Buat di Google Flow</p>
+      <p className="mt-1 text-xs text-gray-500">
+        Salin prompt ini ke Flow, buat gambarnya (pilih rasio {rasio}), lalu unggah hasilnya ke panel ini. Tanpa kredit.
+      </p>
+      {adegan ? (
+        <>
+          <textarea
+            readOnly
+            aria-label="Prompt untuk Google Flow"
+            value={prompt}
+            rows={7}
+            onFocus={(e) => e.currentTarget.select()}
+            className="mt-2 w-full resize-y rounded-lg border border-line bg-surface-muted p-2 text-xs"
+          />
+          <button type="button" onClick={() => void salin()} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs font-semibold hover:bg-surface-muted">
+            <Copy size={14} /> Salin prompt
+          </button>
+        </>
+      ) : (
+        <p className="mt-2 text-xs text-amber-700">Isi adegan panel dulu, lalu prompt akan muncul di sini.</p>
+      )}
+      {bergambar.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs font-medium text-gray-600">Gambar acuan tokoh (unggah di Flow agar wajahnya konsisten)</p>
+          <ul className="mt-1 space-y-1">
+            {bergambar.map((t) => (
+              <li key={t.id}>
+                <button type="button" onClick={() => void unduh(t)} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs hover:bg-surface-muted">
+                  <Download size={13} /> {terunduh[t.nama] ? `Unduh lagi: ${t.nama}` : `Unduh potret ${t.nama}`}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {tampil.length > bergambar.length && (
+        <p className="mt-2 text-xs text-gray-500">
+          {tampil.filter((t) => !alamatPotret(t, ai.gaya)).map((t) => t.nama).join(", ")} belum punya potret; buat dulu di tab Tokoh bila ingin dipakai sebagai acuan.
+        </p>
+      )}
+      {pesan && (
+        <p role={pesan.ok ? "status" : "alert"} className={`mt-2 text-xs ${pesan.ok ? "text-emerald-700" : "text-red-700"}`}>
+          {pesan.teks}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Unggah gambar sendiri ke panel, mis. hasil Google Flow. Tersedia di panel kosong maupun yang sudah bergambar. */
+function UnggahGambarSection({ panelId, ada, ai }: { panelId: string; ada: boolean; ai: EditAiProps }) {
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const jalan = ai.sibuk === panelId;
+
+  async function pilih(file: File | undefined) {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return setError("Gambar harus berformat JPG, PNG, atau WebP.");
+    setError(null);
+    setError(await ai.onUnggah(panelId, file));
+  }
+
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <p className="font-semibold">{ada ? "Ganti dengan gambar sendiri" : "Unggah gambar panel"}</p>
+      <p className="mt-1 text-xs text-gray-500">Pakai gambar dari Google Flow atau sumber lain. Gratis, tanpa kredit.</p>
+      <button
+        type="button"
+        disabled={!ai.tersimpan || !!ai.sibuk}
+        onClick={() => fileRef.current?.click()}
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs font-semibold hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {jalan ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} {jalan ? "Mengunggah..." : "Unggah gambar"}
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="sr-only"
+        aria-label="Unggah gambar panel"
+        onChange={(e) => {
+          void pilih(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function EditAiSection({ panelId, ai }: { panelId: string; ai: EditAiProps }) {
   const [instruksi, setInstruksi] = useState("");
@@ -488,7 +623,7 @@ function RiwayatGambar({ riwayat }: { riwayat: ReturnType<typeof useVersiGambar>
               disabled={sibuk}
               aria-pressed={i === index}
               aria-label={`Versi ${i + 1}${i === index ? ", sedang dipakai" : ""}`}
-              title={v.sumber === "edit" ? "Hasil edit AI" : v.sumber === "salinan" ? "Salinan dari panel lain" : "Hasil buat gambar halaman"}
+              title={v.sumber === "edit" ? "Hasil edit AI" : v.sumber === "salinan" ? "Salinan dari panel lain" : v.sumber === "unggah" ? "Gambar unggahan sendiri" : "Hasil buat gambar halaman"}
               onClick={() => void pasang(v)}
               className={`relative block aspect-[3/4] w-full overflow-hidden rounded-md bg-surface-muted ${i === index ? "ring-2 ring-brand" : "hover:ring-2 hover:ring-line"}`}
             >
@@ -533,6 +668,8 @@ function PanelTab({ ai }: { ai: EditAiProps }) {
         <p className="text-xs font-medium text-gray-600">Adegan (dipakai untuk membuat gambar)</p>
         <AdeganInput label="Adegan panel" rows={4} value={panel.adegan} onChange={(v) => updatePanel(panel.id, { adegan: v })} className="mt-1" />
       </div>
+      <FlowSection key={`flow-${panel.id}`} panel={panel} ai={ai} />
+      <UnggahGambarSection key={`unggah-${panel.id}`} panelId={panel.id} ada={!!panel.imageUrl} ai={ai} />
       {panel.imageUrl && <EditAiSection key={panel.id} panelId={panel.id} ai={ai} />}
       {panel.imageUrl && riwayat.versi.length > 0 && <RiwayatGambar riwayat={riwayat} />}
       <div className="grid grid-cols-2 gap-2">
@@ -859,6 +996,8 @@ export function EditorShell({
   const [generatingPage, setGeneratingPage] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
+  /** tokoh di naskah yang belum ada di daftar: dialog "buat semua tokoh" sebelum membuat gambar halaman */
+  const [perluTokoh, setPerluTokoh] = useState<{ pageId: string; nama: string[] } | null>(null);
   const [daftarTokoh, setDaftarTokoh] = useState(tokoh);
   const [sheet, setSheet] = useState(karakter);
 
@@ -932,8 +1071,47 @@ export function EditorShell({
     }
   }
 
-  async function generateHalaman(pageId: string) {
+  async function unggahPanel(panelId: string, file: File): Promise<string | null> {
+    if (!comicId) return "Komik belum tersimpan";
+    setEditingPanel(panelId);
+    try {
+      if (!(await save.simpanSekarang())) return "Gagal menyimpan perubahan editor. Coba lagi.";
+      const form = new FormData();
+      form.set("file", await kecilkanGambar(file));
+      const res = await fetch(`/api/comics/${comicId}/panels/${panelId}/gambar`, { method: "PUT", body: form });
+      const json = (await res.json().catch(() => null)) as { ok: true; imageUrl: string } | { ok: false; error: string } | null;
+      if (res.ok && json?.ok) {
+        applyPanelImages({ [panelId]: json.imageUrl });
+        return null;
+      }
+      return json && !json.ok ? json.error : "Gagal mengunggah gambar. Coba lagi.";
+    } catch {
+      return "Tidak ada koneksi. Coba lagi.";
+    } finally {
+      setEditingPanel(null);
+    }
+  }
+
+  /**
+   * Tombol "Buat gambar halaman". Bila naskah halaman menyebut tokoh yang belum ada di daftar tokoh, tampilkan dialog untuk
+   * membuat semuanya dulu; pemeriksaan gagal tidak menghalangi (langsung lanjut). `lewatiTokoh` dipakai dialog untuk melanjutkan.
+   */
+  async function generateHalaman(pageId: string, lewatiTokoh = false) {
     if (!comicId) return;
+    if (!lewatiTokoh) {
+      setGenError(null);
+      try {
+        const res = await fetch(`/api/comics/${comicId}/tokoh/belum?halaman=${pageId}`);
+        const json = (await res.json().catch(() => null)) as { ok: true; nama: string[] } | { ok: false } | null;
+        if (res.ok && json?.ok && json.nama.length > 0) {
+          setPerluTokoh({ pageId, nama: json.nama });
+          return;
+        }
+      } catch {
+        // tanpa koneksi atau galat: lanjut, gambar tetap dibuat dan tokohnya ditambahkan otomatis
+      }
+    }
+    setPerluTokoh(null);
     setGenError(null);
     setGeneratingPage(pageId);
     try {
@@ -1029,7 +1207,7 @@ export function EditorShell({
   return (
     <div className="flex h-screen overflow-hidden bg-canvas text-foreground">
       <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-surface">
-        <div className="flex items-center justify-between border-b border-line p-3">
+        <div className="flex flex-col gap-2.5 border-b border-line p-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{title}</p>
             <p className="text-xs text-gray-500">{saldo} kredit</p>
@@ -1051,7 +1229,8 @@ export function EditorShell({
               <p className="text-xs text-gray-500">Pratinjau, tidak disimpan</p>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          {/* tombol di bawah judul agar judul tidak terpotong; galat ekspor muncul tepat di bawah barisnya */}
+          <div className="relative flex items-stretch gap-1.5">
             <TombolTerbit comicId={comicId} awal={terbit} penulis={penulis} fontFamily={fontFamily} simpanDulu={save.simpanSekarang} />
             <TombolEkspor judul={title} fontFamily={fontFamily} />
           </div>
@@ -1144,13 +1323,29 @@ export function EditorShell({
                 saldo,
                 sibuk: editingPanel ?? generatingPage,
                 onEdit: editPanelAi,
+                onUnggah: unggahPanel,
                 comicId,
+                tokoh: daftarTokoh,
+                gaya,
               }}
             />
           )}
         </div>
         </NamaTokohContext.Provider>
       </aside>
+      {perluTokoh && comicId && (
+        <DialogTokohNaskah
+          key={perluTokoh.pageId}
+          comicId={comicId}
+          nama={perluTokoh.nama}
+          saldo={saldo}
+          setSaldo={setSaldo}
+          setTokoh={setDaftarTokoh}
+          setSheet={setSheet}
+          onLanjut={() => void generateHalaman(perluTokoh.pageId, true)}
+          onBatal={() => setPerluTokoh(null)}
+        />
+      )}
     </div>
   );
 }

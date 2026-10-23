@@ -24,7 +24,7 @@ export default async function WizardPage({
 
   const { data: comic } = await supabase
     .from("comics")
-    .select("id, user_id, judul, topik, jenjang, tujuan, cerita, tokoh_json, jumlah_halaman, gaya, wizard_step, status, naskah_status, naskah_error")
+    .select("id, user_id, judul, topik, jenjang, tujuan, cerita, tokoh_json, jumlah_halaman, panel_per_halaman, gaya, wizard_step, status, naskah_status, naskah_error")
     .eq("id", id)
     .maybeSingle();
   if (!comic || comic.user_id !== user.id) notFound();
@@ -52,6 +52,7 @@ export default async function WizardPage({
           cerita: comic.cerita,
           tokoh_json: (comic.tokoh_json as Tokoh[] | null) ?? [],
           jumlah_halaman: comic.jumlah_halaman,
+          panel_per_halaman: comic.panel_per_halaman ?? null,
           gaya: comic.gaya,
           wizard_step: step,
         }}

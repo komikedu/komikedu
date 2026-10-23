@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type SumberVersi = "halaman" | "edit" | "salinan";
+export type SumberVersi = "halaman" | "edit" | "salinan" | "unggah";
 export type VersiGambar = { id: string; url: string; sumber: SumberVersi; dibuat: string };
 
 export type VersiResult<T = object> = ({ ok: true } & T) | { ok: false; error: string; status: number };

@@ -16,7 +16,7 @@ export default async function DevWizardPage({ searchParams }: { searchParams: Pr
       <WizardForm
         comicId="00000000-0000-4000-8000-000000000000"
         userId="00000000-0000-4000-8000-000000000001"
-        initial={{ judul: "Komik tanpa judul", topik: "KPK dan FPB", jenjang: 5, tujuan: null, cerita: null, tokoh_json: [], jumlah_halaman: 8, gaya: null, wizard_step: step }}
+        initial={{ judul: "Komik tanpa judul", topik: "KPK dan FPB", jenjang: 5, tujuan: null, cerita: null, tokoh_json: [], jumlah_halaman: 8, panel_per_halaman: null, gaya: null, wizard_step: step }}
         materiAwal={null}
         naskahStatus="none"
         naskahError={null}

@@ -6,6 +6,7 @@ import { ImagePlus, Loader2, Sparkles, Upload, X } from "lucide-react";
 import { gambarTokoh, isPresetId, type Tokoh } from "@/lib/comics/tokoh";
 import type { GaleriItem } from "@/lib/comics/galeri-tokoh";
 import { simpanTokoh } from "./actions";
+import { TombolLengkapi } from "./tombol-lengkapi";
 
 const COST = 1;
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -333,6 +334,9 @@ export function TokohDetail({
                 className="mt-1 w-full rounded border border-line px-2 py-1.5 text-xs"
               />
               <p className="mt-1 text-[11px] text-gray-500">{draf.length}/300. Ubah pakaian atau aksesori di sini, lalu buat gambar baru.</p>
+              <div className="mt-2">
+                <TombolLengkapi comicId={comicId} nama={t.nama} deskripsi={draf} onHasil={setDraf} disabled={sibuk} />
+              </div>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <button
                   type="button"

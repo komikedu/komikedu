@@ -58,7 +58,7 @@ export function terimaPerbaikan(
 type Halaman = Script["halaman"][number];
 type PanelNaskah = Halaman["panel"][number];
 
-export const MAX_PANEL = 4;
+export const MAX_PANEL = 6;
 export const MAX_BALON = 6;
 
 const panelKosong = (urutan: number): PanelNaskah => ({ urutan, adegan: "", karakter: [], dialog: [], hitungan: [] });

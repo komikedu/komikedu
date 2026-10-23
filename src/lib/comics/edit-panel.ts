@@ -4,10 +4,11 @@ import sharp from "sharp";
 import { z } from "zod";
 import type { KarakterSheet } from "@/lib/ai/characters";
 import { getImageProvider } from "@/lib/ai/image-providers";
-import { kuotaHabis, PESAN_KUOTA } from "@/lib/ai/galat";
+import { ditolakFilter, kuotaHabis, PESAN_KUOTA } from "@/lib/ai/galat";
 import { barisGenerations, rekamPemakaian, type Pemakaian } from "@/lib/ai/usage";
 import { GAYA } from "@/lib/comics/schema";
 import { potretTokoh, punyaPotret } from "@/lib/comics/referensi-tokoh";
+import { ambilKunci, syaratKunciBebas } from "@/lib/comics/kunci-generate";
 import { catatVersi } from "@/lib/comics/versi-gambar";
 import { ambilGambar, kunciKomik, simpanGambar } from "@/lib/storage/gambar";
 import type { Tokoh } from "@/lib/comics/tokoh";
@@ -50,7 +51,7 @@ export async function editPanelImage(
   if (!panel.image_url) return { ok: false, error: "Panel ini belum punya gambar. Buat gambar halamannya dulu.", status: 400 };
   if (!kunciKomik(panel.image_url, userId, comicId)) return { ok: false, error: "Gambar panel tidak dikenali", status: 400 };
 
-  const { data: klaim } = await admin.from("panels").update({ status: "generating" }).eq("id", panelId).neq("status", "generating").select("id");
+  const { data: klaim } = await admin.from("panels").update(ambilKunci()).eq("id", panelId).or(syaratKunciBebas()).select("id");
   if (!klaim?.length) return { ok: false, error: "Gambar panel ini sedang dibuat", status: 409 };
 
   const { data: paid, error: payError } = await admin.rpc("spend_credits", {
@@ -111,13 +112,12 @@ export async function editPanelImage(
     await admin.rpc("refund_credits", { p_user: userId, p_amount: EDIT_COST, p_alasan: "refund edit panel gagal", p_ref: panelId });
     await admin.from("panels").update({ status: "selesai" }).eq("id", panelId);
     await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "edit-panel", provider: provider.name, status: "gagal" }));
-    const diblokir = e instanceof Error && /diblokir|tidak mengembalikan gambar/i.test(e.message);
     return {
       ok: false,
       error: kuotaHabis(e)
         ? PESAN_KUOTA
-        : diblokir
-          ? "Perubahan ini tidak bisa dibuat. Coba tulis perintah lain. Kredit sudah dikembalikan."
+        : ditolakFilter(e)
+          ? "Perubahan ini ditolak filter keamanan layanan gambar. Coba tulis perintah lain. Kredit sudah dikembalikan."
           : "Gagal mengubah gambar. Kredit sudah dikembalikan, silakan coba lagi.",
       status: kuotaHabis(e) ? 503 : 500,
     };

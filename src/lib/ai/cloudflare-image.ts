@@ -18,6 +18,8 @@ const NEURON_INPUT_PER_TILE = 5.37;
 const USD_PER_NEURON = 0.011 / 1000;
 
 const RETRYABLE = new Set([500, 502, 503]);
+const MAX_COBA_FILTER = 4; // percobaan total saat keluaran ditolak filter keamanan
+const SAMA_DENGAN_FILTER = /flagged/i;
 
 /** Ukuran generate untuk rasio w:h: sisi terpanjang 1024, kelipatan 16, dalam rentang 256-1920 yang diterima model. */
 export function ukuranGenerate(w: number, h: number): { width: number; height: number } {
@@ -106,11 +108,17 @@ export class CloudflareImageProvider implements ImageProvider {
         console.info(JSON.stringify({ ai: "cloudflare-image", ...pakai, ...ukuran, refs: refs.length, ms: Date.now() - started }));
         return Buffer.from(base64, "base64");
       }
+      const pesan = json?.errors?.map((e) => `${e.code ?? ""} ${e.message ?? ""}`.trim()).join("; ") || res.statusText;
+      // filter keamanan menolak keluaran ("output flagged"), sering salah sasaran pada gambar anak-anak; hasilnya acak,
+      // jadi mencoba lagi dengan sedikit variasi komposisi biasanya lolos (jarang sampai empat kali)
+      if (attempt < MAX_COBA_FILTER && res.status === 400 && SAMA_DENGAN_FILTER.test(pesan)) {
+        form.set("prompt", `${prompt}\nVariasi komposisi ${attempt}.`);
+        continue;
+      }
       if (attempt < 3 && RETRYABLE.has(res.status)) {
         await new Promise((r) => setTimeout(r, 3000 * attempt));
         continue;
       }
-      const pesan = json?.errors?.map((e) => `${e.code ?? ""} ${e.message ?? ""}`.trim()).join("; ") || res.statusText;
       throw Object.assign(new Error(`Cloudflare AI ${res.status}: ${pesan}`), { status: res.status });
     }
   }

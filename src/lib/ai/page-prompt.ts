@@ -10,6 +10,22 @@ export const ATURAN_TEKS =
   "Papan nama toko, spanduk, poster, label, sampul buku, layar, dan papan tulis harus POLOS tanpa tulisan apa pun " +
   "(boleh berisi gambar sederhana atau warna saja). ";
 
+/**
+ * Komposisi yang menyisakan ruang untuk balon dialog. Balon ditaruh editor di atas gambar, mulai dari tepi atas panel,
+ * jadi bagian atas bingkai dikosongkan dari wajah dan benda penting. Tanpa dialog (jumlah 0) tidak ada yang disisihkan;
+ * jumlah tidak diketahui dianggap satu sampai dua balon.
+ */
+export function ruangBalon(jumlah?: number, bingkai = "bingkai"): string {
+  if (jumlah === 0) return "";
+  const bagian = jumlah !== undefined && jumlah >= 2 ? "dua perlima (sekitar 40%)" : "sepertiga (sekitar 35%)";
+  return (
+    `KOMPOSISI (ruang untuk balon dialog yang ditambahkan nanti di atas gambar): kosongkan ${bagian} bagian ATAS ${bingkai}. ` +
+    "Area itu hanya berisi latar yang sederhana dan tenang (dinding, langit-langit, langit, atau warna polos), tanpa wajah, kepala, tangan, atau benda penting, tetapi jangan dibuat kotak atau putih kosong. " +
+    `Tempatkan semua tokoh dan benda penting di bagian bawah ${bingkai}: puncak kepala tokoh berada di bawah batas itu dan tidak ada yang terpotong tepi ${bingkai}. ` +
+    "Bila perlu, gambar tokoh sedikit lebih jauh (setengah badan sampai seluruh badan) agar muat. "
+  );
+}
+
 const daftarReferensi = (refs: { label?: string }[], awal: number) =>
   refs.map((r, i) => `${i + awal}) ${r.label ?? "desain karakter"}`).join("; ");
 
@@ -19,7 +35,8 @@ export function buildPagePrompt(req: PageImageRequest): string {
     .map(
       (p, i) =>
         `Panel ${i + 1} (${describeRect(p.rect)}): ${p.adegan}` +
-        (p.karakter.length ? ` Karakter: ${p.karakter.join(", ")}.` : ""),
+        (p.karakter.length ? ` Karakter: ${p.karakter.join(", ")}.` : "") +
+        (ruangBalon(p.balon, "panel") ? ` ${ruangBalon(p.balon, "panel").trim()}` : ""),
     )
     .join("\n");
   // tokoh yang punya potret: gambar acuan yang menentukan wajah, rambut, dan pakaian; deskripsi teks hanya catatan.
@@ -114,6 +131,7 @@ export function buildPanelPrompt(
     `Satu adegan ilustrasi komik edukasi untuk anak SD Indonesia, gaya ${req.gaya}. Gambar penuh satu bingkai, tanpa pembagian panel.`,
     `Adegan: ${panel.adegan}`,
     chars ? `Tokoh yang tampil:\n${chars}` : "",
+    ruangBalon(panel.balon).trim(),
     req.referenceImages?.length
       ? "Gambar referensi: " +
         req.referenceImages.map((r, i) => `image ${i} = ${r.label ?? "desain karakter"}`).join("; ") +

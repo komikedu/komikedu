@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPagePrompt } from "./page-prompt";
+import { buildPagePrompt, buildPanelPrompt, ruangBalon } from "./page-prompt";
 
 const req = {
   gaya: "kartun cerah",
@@ -59,5 +59,35 @@ describe("buildPagePrompt", () => {
 
   it("menolak halaman tanpa panel", () => {
     expect(() => buildPagePrompt({ ...req, panels: [] })).toThrow();
+  });
+});
+
+describe("ruang untuk balon dialog", () => {
+  it("jumlah balon tidak diketahui: sepertiga atas dikosongkan", () => {
+    const r = ruangBalon();
+    expect(r).toContain("sepertiga (sekitar 35%) bagian ATAS bingkai");
+    expect(r).toMatch(/tanpa wajah, kepala, tangan/);
+    expect(r).toMatch(/tidak ada yang terpotong/);
+  });
+  it("dua balon atau lebih butuh ruang lebih besar; tanpa balon tidak ada yang disisihkan", () => {
+    expect(ruangBalon(2)).toContain("dua perlima (sekitar 40%)");
+    expect(ruangBalon(1)).toContain("sepertiga");
+    expect(ruangBalon(0)).toBe("");
+  });
+  it("prompt halaman memasang aturan per panel sesuai jumlah dialognya", () => {
+    const p = buildPagePrompt({
+      ...req,
+      panels: [
+        { ...req.panels[0], balon: 3 },
+        { ...req.panels[1], balon: 0 },
+      ],
+    });
+    expect(p.match(/KOMPOSISI/g)).toHaveLength(1);
+    expect(p).toContain("dua perlima (sekitar 40%) bagian ATAS panel");
+  });
+  it("prompt per panel (FLUX) menyertakan aturan komposisi", () => {
+    const p = buildPanelPrompt({ ...req.panels[0], balon: 1 }, req);
+    expect(p).toContain("KOMPOSISI");
+    expect(buildPanelPrompt({ ...req.panels[0], balon: 0 }, req)).not.toContain("KOMPOSISI");
   });
 });

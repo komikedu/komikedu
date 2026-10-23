@@ -61,10 +61,16 @@ function komponen(m: Uint8Array, w: number, h: number, nilai: number) {
       const p = antri[kepala++];
       const x = p % w;
       const y = (p - x) / w;
-      if (x > 0 && m[p - 1] === nilai && !label[p - 1]) (label[p - 1] = id), (antri[ekor++] = p - 1);
-      if (x < w - 1 && m[p + 1] === nilai && !label[p + 1]) (label[p + 1] = id), (antri[ekor++] = p + 1);
-      if (y > 0 && m[p - w] === nilai && !label[p - w]) (label[p - w] = id), (antri[ekor++] = p - w);
-      if (y < h - 1 && m[p + w] === nilai && !label[p + w]) (label[p + w] = id), (antri[ekor++] = p + w);
+      const tetangga: number[] = [];
+      if (x > 0) tetangga.push(p - 1);
+      if (x < w - 1) tetangga.push(p + 1);
+      if (y > 0) tetangga.push(p - w);
+      if (y < h - 1) tetangga.push(p + w);
+      for (const t of tetangga) {
+        if (m[t] !== nilai || label[t]) continue;
+        label[t] = id;
+        antri[ekor++] = t;
+      }
     }
     luas.push(ekor);
   }
@@ -120,8 +126,14 @@ export function rapikanMask(alpha: ArrayLike<number>, w: number, h: number): Uin
   // 3. isi lubang tertutup yang kecil (bukan latar yang terkurung lengan, itu biasanya luas)
   const bg = komponen(m, w, h, 0);
   const menyentuhTepi = new Set<number>();
-  for (let x = 0; x < w; x++) (menyentuhTepi.add(bg.label[x]), menyentuhTepi.add(bg.label[(h - 1) * w + x]));
-  for (let y = 0; y < h; y++) (menyentuhTepi.add(bg.label[y * w]), menyentuhTepi.add(bg.label[y * w + w - 1]));
+  for (let x = 0; x < w; x++) {
+    menyentuhTepi.add(bg.label[x]);
+    menyentuhTepi.add(bg.label[(h - 1) * w + x]);
+  }
+  for (let y = 0; y < h; y++) {
+    menyentuhTepi.add(bg.label[y * w]);
+    menyentuhTepi.add(bg.label[y * w + w - 1]);
+  }
   for (let i = 0; i < m.length; i++) {
     const l = bg.label[i];
     if (l && !menyentuhTepi.has(l) && bg.luas[l] <= luasTokoh * MAKS_LUBANG) m[i] = 1;

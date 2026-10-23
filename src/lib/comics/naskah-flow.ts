@@ -36,14 +36,15 @@ export function buatNaskahFlow(i: { judul: string; gaya: string | null; tokoh: T
       if (!adegan) return;
       const r = rects[idx] ?? { w: 1, h: 1 };
       const rasio = rasioTerdekat(r.w * HAL_W, r.h * HAL_H);
+      const dialog = p.dialog.filter((d) => d.teks.trim());
       const tampil = tokohDiTeks(i.tokoh, [adegan, ...p.karakter, ...p.dialog.map((d) => d.karakter)].join(" "));
       panel.push({
         no: panel.length + 1,
         halaman: h.urutan,
         panel: p.urutan,
         rasio,
-        prompt: buatPromptFlow({ adegan, gaya: gaya.prompt, tokoh: tampil, rasio }),
-        dialog: p.dialog.filter((d) => d.teks.trim()),
+        prompt: buatPromptFlow({ adegan, gaya: gaya.prompt, tokoh: tampil, rasio, balon: dialog.length }),
+        dialog,
       });
     });
   }

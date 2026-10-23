@@ -63,3 +63,14 @@ describe("buatPromptFlow", () => {
     expect(() => buatPromptFlow({ ...dasar, adegan: "  ", tokoh: [] })).toThrow();
   });
 });
+
+describe("buatPromptFlow: ruang untuk balon dialog", () => {
+  const dasar = { adegan: "Doni menunjuk jam.", gaya: "kartun", tokoh: [doni], rasio: "4:3" };
+  it("menyisakan bagian atas untuk balon", () => {
+    expect(buatPromptFlow({ ...dasar, balon: 2 })).toContain("dua perlima (sekitar 40%) bagian ATAS bingkai");
+    expect(buatPromptFlow(dasar)).toContain("sepertiga (sekitar 35%) bagian ATAS bingkai");
+  });
+  it("panel tanpa dialog tidak menyisihkan ruang", () => {
+    expect(buatPromptFlow({ ...dasar, balon: 0 })).not.toContain("KOMPOSISI");
+  });
+});

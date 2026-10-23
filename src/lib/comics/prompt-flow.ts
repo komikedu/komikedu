@@ -1,4 +1,4 @@
-import { ATURAN_TEKS } from "@/lib/ai/page-prompt";
+import { ATURAN_TEKS, ruangBalon } from "@/lib/ai/page-prompt";
 import { gambarTokoh, isPresetId, type Tokoh } from "./tokoh";
 
 /** Rasio gambar yang bisa dipilih di Google Flow. */
@@ -38,6 +38,8 @@ export type PromptFlowInput = {
   rasio: string;
   /** nama berkas acuan per tokoh, sesuai yang diunduh guru; tokoh yang tidak ada di sini dianggap tanpa gambar */
   acuan?: Record<string, string>;
+  /** jumlah balon dialog di panel; menentukan ruang kosong di bagian atas gambar (kosong = anggap 1-2) */
+  balon?: number;
 };
 
 /**
@@ -59,6 +61,7 @@ export function buatPromptFlow(i: PromptFlowInput): string {
     `Satu adegan ilustrasi komik edukasi untuk anak SD Indonesia, gaya ${i.gaya}. Gambar penuh satu bingkai (rasio ${i.rasio}), tanpa pembagian panel.`,
     `Adegan: ${adegan}`,
     chars ? `Tokoh yang tampil (harus terlihat identik di semua panel komik):\n${chars}` : "",
+    ruangBalon(i.balon).trim(),
     ATURAN_TEKS + "Konten ramah anak, tanpa kekerasan.",
   ]
     .filter(Boolean)

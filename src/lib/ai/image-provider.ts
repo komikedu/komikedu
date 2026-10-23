@@ -5,7 +5,13 @@ export type PageImageRequest = {
    * Panel dalam urutan baca: adegan (tanpa teks di gambar), karakter yang muncul, dan posisi
    * ternormalisasi (0-1) terhadap halaman, sama dengan kotak panel di editor.
    */
-  panels: { adegan: string; karakter: string[]; rect: Rect }[];
+  panels: {
+    adegan: string;
+    karakter: string[];
+    rect: Rect;
+    /** jumlah balon dialog di panel; menentukan ruang kosong di bagian atas gambar (kosong = anggap 1-2) */
+    balon?: number;
+  }[];
   gaya: string;
   /** Deskripsi karakter yang muncul, agar wajah dan pakaian konsisten. */
   karakter: { nama: string; deskripsi: string }[];

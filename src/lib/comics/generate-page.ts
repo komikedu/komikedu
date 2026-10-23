@@ -21,7 +21,7 @@ type PanelRow = {
   urutan: number;
   posisi: { x: number; y: number; w: number; h: number } | null;
   adegan: string | null;
-  script_json: { adegan?: string; karakter?: string[]; dialog?: { karakter: string }[] } | null;
+  script_json: { adegan?: string; karakter?: string[]; dialog?: { karakter: string; teks?: string }[] } | null;
 };
 
 export type GenerateResult =
@@ -153,7 +153,7 @@ export async function generatePageImage(
         gaya: gaya.prompt,
         karakter,
         referenceImages,
-        panels: panels.map((p, i) => ({ adegan: adegan[i], karakter: p.script_json?.karakter ?? [], rect: rects[i] })),
+        panels: panels.map((p, i) => ({ adegan: adegan[i], karakter: p.script_json?.karakter ?? [], rect: rects[i], balon: (p.script_json?.dialog ?? []).filter((d) => d.teks?.trim()).length })),
       }),
     );
 

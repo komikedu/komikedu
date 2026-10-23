@@ -7,11 +7,41 @@ export type BubbleKind = "bicara" | "pikir" | "narasi";
 /** Bentuk garis tepi balon (lihat bentuk-balon.ts). Kosong = bentuk bawaan menurut jenisnya. Tidak berlaku untuk narasi. */
 export type BentukBalon = "oval" | "kotak" | "awan" | "ledakan" | "teriak" | "gerak";
 
+/** Rupa teks/balon: hanya teks, teks dalam kotak, atau balon dialog. Bawaan menurut jenis: narasi = kotak, lainnya = balon. */
+export type ModeBalon = "teks" | "kotak" | "balon";
+
+/** Pengaturan tampilan tambahan sebuah balon; semua opsional, kosong = bawaan (lihat gaya-balon.ts). */
+export type GayaBalon = {
+  mode?: ModeBalon;
+  /** id font (FONT_BALON) */
+  font?: string;
+  /** huruf tebal (bawaan ya) */
+  tebal?: boolean;
+  miring?: boolean;
+  rata?: "left" | "center" | "right";
+  /** huruf disusun ke bawah, satu huruf per baris */
+  vertikal?: boolean;
+  warnaTeks?: string;
+  warnaLatar?: string;
+  /** tebal garis tepi balon atau kotak (0 = tanpa garis) */
+  tebalGaris?: number;
+  warnaGaris?: string;
+  /** putaran dalam derajat */
+  rotasi?: number;
+  /** garis tepi pada huruf (efek stroke), bawaan mati */
+  stroke?: boolean;
+  tebalStroke?: number;
+  warnaStroke?: string;
+  /** sudut membulat kotak (mode Kotak), bawaan 4 */
+  radius?: number;
+};
+
 export type Bubble = {
   id: string;
   panelId: string;
   kind: BubbleKind;
   bentuk?: BentukBalon;
+  gaya?: GayaBalon;
   text: string;
   x: number;
   y: number;

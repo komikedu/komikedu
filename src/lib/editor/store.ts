@@ -3,18 +3,24 @@ import { immer } from "zustand/middleware/immer";
 import { temporal } from "zundo";
 import { gantiNamaDiTeks, type GantiNama } from "@/lib/comics/tokoh";
 import { panelDiTitik } from "./lepas-gambar";
-import { createBubble, createKumpulan, createPage, createStiker, createTeks } from "./factory";
+import { createBubble, createKumpulan, createPage, createStiker, createTeks, newId } from "./factory";
 import { layoutBubbles } from "./from-script";
 import { deletePage, duplicatePage, insertPageAfter } from "./page-ops";
 import { deletePanel, duplicateBubble, duplicateElement, duplicatePanel, movePanel, resetCorners, resizePanel, setCorner, setImageRect, setLatar, splitPanel, type SplitArah } from "./panel-ops";
-import type { Bubble, BubbleKind, EditorPage, ElemenKumpulan, ElemenTeks, Latar, Panel, Point } from "./types";
+import { PAGE_H, PAGE_W } from "./types";
+import type { Bubble, BubbleKind, EditorPage, ElemenKumpulan, ElemenTeks, Latar, MathElement, Panel, Point } from "./types";
 
-type Tool = "move" | "text" | "mat" | "teksgaya";
+/** Isi papan klip internal editor: elemen dan balon yang disalin, bisa ditempel di halaman mana pun. */
+export type IsiPapanKlip = { elemen: MathElement[]; balon: Bubble[] };
+
+type Tool = "move" | "text" | "mat" | "teksgaya" | "pan";
 
 type EditorState = {
   pages: EditorPage[];
   activePageId: string;
   selectedId: string | null;
+  /** Balon yang dipilih bersama (Shift/Ctrl+klik); berlaku bila ada minimal dua dan memuat selectedId. Lihat seleksiAktif. */
+  seleksi: string[];
   tool: Tool;
   zoom: number;
   /** Pergeseran sementara saat panel diseret (agar balonnya ikut terlihat bergerak); tidak masuk riwayat. */
@@ -27,6 +33,17 @@ type EditorState = {
   init: (pages: EditorPage[]) => void;
   setActivePage: (id: string) => void;
   select: (id: string | null) => void;
+  /** Tambah atau lepas sebuah balon dari pilihan bersama (Shift/Ctrl+klik). */
+  toggleSeleksiBalon: (id: string) => void;
+  /** Pilih semua balon yang terlihat di halaman aktif. */
+  pilihSemuaBalon: () => void;
+  /** Tempel isi papan klip ke halaman aktif, digeser `geser` unit; yang ditempel menjadi pilihan. */
+  tempelData: (isi: IsiPapanKlip, geser: number) => void;
+  /** Ubah beberapa balon sekaligus sebagai satu langkah riwayat. */
+  updateBalonBanyak: (ids: string[], patch: Partial<Omit<Bubble, "id" | "panelId">>) => void;
+  deleteBalonBanyak: (ids: string[]) => void;
+  /** Geser beberapa balon sekaligus sebagai satu langkah riwayat (seret balon yang dipilih bersama). */
+  geserBalonBanyak: (ids: string[], dx: number, dy: number) => void;
   setTool: (tool: Tool) => void;
   setZoom: (zoom: number) => void;
   addPage: (layoutId: string) => void;
@@ -74,6 +91,7 @@ export const useEditor = create<EditorState>()(
       pages: [],
       activePageId: "",
       selectedId: null,
+      seleksi: [],
       tool: "move",
       zoom: 1,
       drag: null,
@@ -85,14 +103,94 @@ export const useEditor = create<EditorState>()(
           s.pages = pages;
           s.activePageId = pages[0]?.id ?? "";
           s.selectedId = null;
+          s.seleksi = [];
         }),
       setActivePage: (id) =>
         set((s) => {
           s.activePageId = id;
           s.selectedId = null;
+          s.seleksi = [];
+        }),
+      toggleSeleksiBalon: (id) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (!page?.bubbles.some((b) => b.id === id)) return;
+          const sekarang = seleksiAktif(s.seleksi, s.selectedId);
+          const awal = sekarang.length ? sekarang : s.selectedId && page.bubbles.some((b) => b.id === s.selectedId) ? [s.selectedId] : [];
+          const baru = awal.includes(id) ? awal.filter((x) => x !== id) : [...awal, id];
+          s.selectedLayer = "panel";
+          s.cornerEdit = null;
+          s.selectedId = baru[0] ?? null;
+          s.seleksi = baru.length >= 2 ? baru : [];
+        }),
+      pilihSemuaBalon: () =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          const ids = page?.bubbles.filter((b) => b.visible).map((b) => b.id) ?? [];
+          if (!ids.length) return;
+          s.selectedLayer = "panel";
+          s.cornerEdit = null;
+          s.selectedId = ids[0];
+          s.seleksi = ids.length >= 2 ? ids : [];
+        }),
+      tempelData: (isi, geser) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (!page) return;
+          const terlihat = page.panels.filter((p) => p.visible);
+          const batas = (n: number, maks: number) => Math.max(0, Math.min(n, Math.max(0, maks)));
+          const elemenBaru: MathElement[] = isi.elemen.map((e) => ({
+            ...e,
+            id: newId(),
+            // terikat ke panel hanya bila panel itu ada di halaman ini; selain itu menjadi elemen bebas
+            panelId: e.panelId && page.panels.some((p) => p.id === e.panelId) ? e.panelId : null,
+            x: Math.round(batas(e.x + geser, PAGE_W - e.w)),
+            y: Math.round(batas(e.y + geser, PAGE_H - e.h)),
+          }));
+          const balonBaru: Bubble[] = [];
+          for (const b of isi.balon) {
+            const x = Math.round(batas(b.x + geser, PAGE_W - b.w));
+            const y = Math.round(batas(b.y + geser, PAGE_H - b.h));
+            const panel = page.panels.find((p) => p.id === b.panelId) ?? panelDiTitik(terlihat, { x: x + b.w / 2, y: y + b.h / 2 }) ?? terlihat[0];
+            if (panel) balonBaru.push({ ...b, id: newId(), panelId: panel.id, x, y, tail: b.tail ? { ...b.tail } : null });
+          }
+          if (!elemenBaru.length && !balonBaru.length) return;
+          page.elements.push(...elemenBaru);
+          page.bubbles.push(...balonBaru);
+          const ids = [...balonBaru.map((b) => b.id), ...elemenBaru.map((e) => e.id)];
+          s.selectedLayer = "panel";
+          s.cornerEdit = null;
+          s.selectedId = ids[0];
+          s.seleksi = balonBaru.length >= 2 && !elemenBaru.length ? balonBaru.map((b) => b.id) : [];
+        }),
+      updateBalonBanyak: (ids, patch) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (!page) return;
+          for (const b of page.bubbles) if (ids.includes(b.id)) Object.assign(b, patch);
+        }),
+      deleteBalonBanyak: (ids) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (!page) return;
+          page.bubbles = page.bubbles.filter((b) => !ids.includes(b.id));
+          s.selectedId = null;
+          s.seleksi = [];
+        }),
+      geserBalonBanyak: (ids, dx, dy) =>
+        set((s) => {
+          if (!dx && !dy) return;
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (!page) return;
+          for (const b of page.bubbles) {
+            if (!ids.includes(b.id)) continue;
+            b.x += dx;
+            b.y += dy;
+          }
         }),
       select: (id) =>
         set((s) => {
+          s.seleksi = [];
           s.selectedId = id;
           s.selectedLayer = "panel";
           if (s.cornerEdit !== id) s.cornerEdit = null;
@@ -387,4 +485,9 @@ export function selectSelectedPanel(s: Pick<EditorState, "pages" | "activePageId
 export function selectSelectedElement(s: Pick<EditorState, "pages" | "activePageId" | "selectedId">) {
   const page = s.pages.find((p) => p.id === s.activePageId);
   return page?.elements.find((e) => e.id === s.selectedId) ?? null;
+}
+
+/** Balon yang sedang dipilih bersama: daftar `seleksi` bila ada minimal dua dan memuat balon utama (selectedId), kalau tidak kosong. */
+export function seleksiAktif(seleksi: string[], selectedId: string | null): string[] {
+  return seleksi.length >= 2 && selectedId !== null && seleksi.includes(selectedId) ? seleksi : [];
 }

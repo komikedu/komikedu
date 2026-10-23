@@ -2,7 +2,7 @@ import { z } from "zod";
 import { LAYOUTS } from "@/lib/ai/layouts";
 import { BENTUK_BALON } from "./bentuk-balon";
 import { FONT_MAX, FONT_MIN, GAYA_TEKS, MAKS_TEKS } from "./gaya-teks";
-import { PAGE_H, PAGE_W, type Bubble, type BentukBalon, type EditorPage, type Latar, type MathElement, type Panel } from "./types";
+import { PAGE_H, PAGE_W, type Bubble, type BentukBalon, type EditorPage, type GayaBalon, type Latar, type MathElement, type Panel } from "./types";
 
 export const MAX_PAGES = 30;
 export const MAX_BUBBLES_PER_PAGE = 40;
@@ -10,6 +10,24 @@ export const MAX_BUBBLE_TEXT = 300;
 
 const layoutIds = LAYOUTS.map((l) => l.id) as [string, ...string[]];
 const coord = (max: number) => z.number().finite().min(-max).max(max * 2);
+
+const GayaBalonSchema = z.object({
+  mode: z.enum(["teks", "kotak", "balon"]).optional(),
+  font: z.string().max(20).optional(),
+  tebal: z.boolean().optional(),
+  miring: z.boolean().optional(),
+  rata: z.enum(["left", "center", "right"]).optional(),
+  vertikal: z.boolean().optional(),
+  warnaTeks: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  warnaLatar: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  tebalGaris: z.number().finite().min(0).max(30).optional(),
+  warnaGaris: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  rotasi: z.number().finite().min(-360).max(360).optional(),
+  stroke: z.boolean().optional(),
+  tebalStroke: z.number().finite().min(0).max(30).optional(),
+  warnaStroke: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  radius: z.number().finite().min(0).max(100).optional(),
+});
 
 const BENTUK_VALID = new Set<string>(BENTUK_BALON.map((b) => b.id));
 
@@ -99,6 +117,7 @@ const BubbleSchema = z.object({
   panelId: z.string().uuid(),
   kind: z.enum(["bicara", "pikir", "narasi"]),
   bentuk: z.enum(["oval", "kotak", "awan", "ledakan", "teriak", "gerak"]).optional(),
+  gaya: GayaBalonSchema.optional(),
   text: z.string().max(MAX_BUBBLE_TEXT),
   x: coord(PAGE_W),
   y: coord(PAGE_H),
@@ -159,7 +178,7 @@ export type EditorRows = {
     jenis: string;
     teks: string;
     posisi: { x: number; y: number };
-    ukuran: { w: number; h: number; bentuk?: BentukBalon };
+    ukuran: { w: number; h: number; bentuk?: BentukBalon; gaya?: GayaBalon };
     ekor: { dx: number; dy: number; lebar?: number } | null;
     font_size: number;
     tampil: boolean;
@@ -214,7 +233,7 @@ export function toRows(comicId: string, pages: SavablePage[]): EditorRows {
         jenis: b.kind,
         teks: b.text,
         posisi: { x: b.x, y: b.y },
-        ukuran: { w: b.w, h: b.h, ...(b.bentuk ? { bentuk: b.bentuk } : {}) },
+        ukuran: { w: b.w, h: b.h, ...(b.bentuk ? { bentuk: b.bentuk } : {}), ...(b.gaya ? { gaya: b.gaya } : {}) },
         ekor: b.tail,
         font_size: b.fontSize,
         tampil: b.visible,
@@ -245,7 +264,7 @@ export type NestedPage = {
       jenis: string;
       teks: string;
       posisi: { x: number; y: number } | null;
-      ukuran: { w: number; h: number; bentuk?: string } | null;
+      ukuran: { w: number; h: number; bentuk?: string; gaya?: unknown } | null;
       ekor: { dx: number; dy: number; lebar?: number } | null;
       font_size: number;
       tampil: boolean;
@@ -284,6 +303,7 @@ export function fromNested(rows: NestedPage[]): EditorPage[] {
               panelId: p.id,
               kind: b.jenis as Bubble["kind"],
               ...(BENTUK_VALID.has(b.ukuran?.bentuk ?? "") ? { bentuk: b.ukuran!.bentuk as BentukBalon } : {}),
+              ...(GayaBalonSchema.safeParse(b.ukuran?.gaya).success && b.ukuran?.gaya ? { gaya: b.ukuran.gaya as GayaBalon } : {}),
               text: b.teks,
               x: b.posisi?.x ?? 0,
               y: b.posisi?.y ?? 0,

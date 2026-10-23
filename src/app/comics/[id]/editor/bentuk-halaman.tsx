@@ -2,6 +2,7 @@
 
 import { Circle, Ellipse, Group, Image as KImage, Line, Rect, Shape, Text } from "react-konva";
 import type Konva from "konva";
+import { FONT_BALON, gayaHuruf, gayaTerpakai, susunVertikal, type GayaBalonTerpakai } from "@/lib/editor/gaya-balon";
 import { LEBAR_EKOR_BAWAAN, areaTeks, garisGerak, jalurKotak, jalurOval, lingkaranAwan, sisipkanEkor, titikGerigi } from "@/lib/editor/bentuk-balon";
 import { burstTeks, gayaTeks, lapisanLanjut, titikBurst } from "@/lib/editor/gaya-teks";
 import { irisanSinar, jajaranGaris, jariSinar, titikGradasi, titikHalftone } from "@/lib/editor/latar-panel";
@@ -197,34 +198,44 @@ export function TepiPanel({ panel, lokal }: { panel: Panel; lokal: number[] | nu
 }
 
 /** Ekor pikiran: dua lingkaran kecil menuju ujung ekor. */
-function EkorPikir({ b }: { b: Bubble }) {
+function EkorPikir({ b, g }: { b: Bubble; g: GayaBalonTerpakai }) {
   if (!b.tail) return null;
   const cx = b.w / 2;
   const cy = b.h / 2;
+  const garis = Math.max(1, g.tebalGaris * 0.75);
   return (
     <>
-      <Circle x={cx + b.tail.dx * 0.55} y={cy + b.tail.dy * 0.7} radius={11} fill="#fff" stroke="#111" strokeWidth={3} />
-      <Circle x={cx + b.tail.dx} y={cy + b.tail.dy} radius={6} fill="#fff" stroke="#111" strokeWidth={3} />
+      <Circle x={cx + b.tail.dx * 0.55} y={cy + b.tail.dy * 0.7} radius={11} fill={g.warnaLatar} stroke={g.warnaGaris} strokeWidth={garis} />
+      <Circle x={cx + b.tail.dx} y={cy + b.tail.dy} radius={6} fill={g.warnaLatar} stroke={g.warnaGaris} strokeWidth={garis} />
     </>
   );
 }
 
 /** Satu garis tertutup: badan balon dengan ekor yang menyambung langsung di garis tepinya. */
-function JalurBalon({ b, poligon, bayangan, runcing }: { b: Bubble; poligon: { x: number; y: number }[]; bayangan?: boolean; runcing?: boolean }) {
+function JalurBalon({ b, g, poligon, bayangan, runcing }: { b: Bubble; g: GayaBalonTerpakai; poligon: { x: number; y: number }[]; bayangan?: boolean; runcing?: boolean }) {
   const tail = b.tail;
   const titik = tail ? sisipkanEkor(poligon, { x: b.w / 2, y: b.h / 2 }, { x: b.w / 2 + tail.dx, y: b.h / 2 + tail.dy }, tail.lebar ?? LEBAR_EKOR_BAWAAN) : poligon;
   const datar = titik.flatMap((t) => [t.x, t.y]);
   return (
     <>
-      {bayangan && <Line points={datar.map((v) => v + 7)} closed fill="#111" lineJoin="round" listening={false} />}
-      <Line points={datar} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin={runcing ? "miter" : "round"} miterLimit={6} />
+      {bayangan && <Line points={datar.map((v) => v + 7)} closed fill={g.warnaGaris} lineJoin="round" listening={false} />}
+      <Line
+        points={datar}
+        closed
+        fill={g.warnaLatar}
+        stroke={g.tebalGaris > 0 ? g.warnaGaris : undefined}
+        strokeWidth={g.tebalGaris}
+        lineJoin={runcing ? "miter" : "round"}
+        miterLimit={6}
+      />
     </>
   );
 }
 
 /** Balon dengan bentuk pilihan; garis tepi dan ekor menyambung jadi satu, kecuali awan yang memakai lingkaran pikiran. */
-function BalonBergaya({ b }: { b: Bubble }) {
+function BalonBergaya({ b, g }: { b: Bubble; g: GayaBalonTerpakai }) {
   const bentuk = b.bentuk ?? "oval";
+  const garis = g.tebalGaris;
 
   if (bentuk === "awan") {
     const { lingkaran, tengah } = lingkaranAwan(b.w, b.h);
@@ -234,20 +245,22 @@ function BalonBergaya({ b }: { b: Bubble }) {
           listening={false}
           sceneFunc={(ctx) => {
             const c = (ctx as unknown as { _context: CanvasRenderingContext2D })._context;
-            c.fillStyle = "#fff";
-            c.strokeStyle = "#111";
-            c.lineWidth = 8;
-            for (const l of lingkaran) {
+            c.fillStyle = g.warnaLatar;
+            c.strokeStyle = g.warnaGaris;
+            c.lineWidth = garis * 2;
+            if (garis > 0) {
+              for (const l of lingkaran) {
+                c.beginPath();
+                c.arc(l.x, l.y, l.r, 0, Math.PI * 2);
+                c.stroke();
+              }
               c.beginPath();
-              c.arc(l.x, l.y, l.r, 0, Math.PI * 2);
+              c.ellipse(tengah.x, tengah.y, tengah.rx, tengah.ry, 0, 0, Math.PI * 2);
               c.stroke();
             }
-            c.beginPath();
-            c.ellipse(tengah.x, tengah.y, tengah.rx, tengah.ry, 0, 0, Math.PI * 2);
-            c.stroke();
             for (const l of lingkaran) {
               c.beginPath();
-              c.arc(l.x, l.y, l.r - 1, 0, Math.PI * 2);
+              c.arc(l.x, l.y, Math.max(1, l.r - garis / 4), 0, Math.PI * 2);
               c.fill();
             }
             c.beginPath();
@@ -255,18 +268,18 @@ function BalonBergaya({ b }: { b: Bubble }) {
             c.fill();
           }}
         />
-        <EkorPikir b={b} />
+        <EkorPikir b={b} g={g} />
       </>
     );
   }
-  if (bentuk === "kotak") return <JalurBalon b={b} poligon={jalurKotak(b.w, b.h)} bayangan />;
-  if (bentuk === "ledakan") return <JalurBalon b={b} poligon={titikGerigi(b.w, b.h, 13, 0.62)} runcing />;
-  if (bentuk === "teriak") return <JalurBalon b={b} poligon={titikGerigi(b.w, b.h, 22, 0.8)} runcing />;
+  if (bentuk === "kotak") return <JalurBalon b={b} g={g} poligon={jalurKotak(b.w, b.h)} bayangan={garis > 0} />;
+  if (bentuk === "ledakan") return <JalurBalon b={b} g={g} poligon={titikGerigi(b.w, b.h, 13, 0.62)} runcing />;
+  if (bentuk === "teriak") return <JalurBalon b={b} g={g} poligon={titikGerigi(b.w, b.h, 22, 0.8)} runcing />;
   return (
     <>
-      <JalurBalon b={b} poligon={jalurOval(b.w, b.h)} />
+      <JalurBalon b={b} g={g} poligon={jalurOval(b.w, b.h)} />
       {bentuk === "gerak" &&
-        garisGerak(b.w, b.h).map((g, i) => <Line key={i} points={g} stroke="#111" strokeWidth={4} lineCap="round" listening={false} />)}
+        garisGerak(b.w, b.h).map((l, i) => <Line key={i} points={l} stroke={g.warnaGaris} strokeWidth={Math.max(1, garis)} lineCap="round" listening={false} />)}
     </>
   );
 }
@@ -275,30 +288,35 @@ export function BubbleShape({ b }: { b: Bubble }) {
   const cx = b.w / 2;
   const cy = b.h / 2;
   const tail = b.tail;
+  const g = gayaTerpakai(b);
 
-  if (b.kind === "narasi") {
-    return <Rect width={b.w} height={b.h} fill="#fff6c8" stroke="#111" strokeWidth={4} cornerRadius={4} />;
+  if (g.mode === "teks") return null;
+  if (g.mode === "kotak") {
+    return <Rect width={b.w} height={b.h} fill={g.warnaLatar} stroke={g.tebalGaris > 0 ? g.warnaGaris : undefined} strokeWidth={g.tebalGaris} cornerRadius={Math.min(g.radius, b.w / 2, b.h / 2)} />;
   }
   if (b.kind === "pikir" && !b.bentuk) {
     return (
       <>
-        <Rect width={b.w} height={b.h} fill="#fff" stroke="#111" strokeWidth={4} cornerRadius={Math.min(b.w, b.h) / 2} />
+        <Rect width={b.w} height={b.h} fill={g.warnaLatar} stroke={g.tebalGaris > 0 ? g.warnaGaris : undefined} strokeWidth={g.tebalGaris} cornerRadius={Math.min(b.w, b.h) / 2} />
         {tail && (
           <>
-            <Circle x={cx + tail.dx * 0.55} y={cy + tail.dy * 0.7} radius={11} fill="#fff" stroke="#111" strokeWidth={3} />
-            <Circle x={cx + tail.dx} y={cy + tail.dy} radius={6} fill="#fff" stroke="#111" strokeWidth={3} />
+            <Circle x={cx + tail.dx * 0.55} y={cy + tail.dy * 0.7} radius={11} fill={g.warnaLatar} stroke={g.warnaGaris} strokeWidth={Math.max(1, g.tebalGaris * 0.75)} />
+            <Circle x={cx + tail.dx} y={cy + tail.dy} radius={6} fill={g.warnaLatar} stroke={g.warnaGaris} strokeWidth={Math.max(1, g.tebalGaris * 0.75)} />
           </>
         )}
       </>
     );
   }
-  return <BalonBergaya b={b} />;
+  return <BalonBergaya b={b} g={g} />;
 }
 
-/** Bentuk balon beserta teksnya (tanpa pegangan seleksi). */
+/** Bentuk balon beserta teksnya (tanpa pegangan seleksi). `fontFamily` adalah font bawaan bila balon tidak memilih font sendiri. */
 export function IsiBalon({ b, fontFamily }: { b: Bubble; fontFamily: string }) {
+  const g = gayaTerpakai(b);
   const pad = 14;
-  const area = b.kind === "narasi" || !b.bentuk ? { x: pad, y: pad / 2, w: b.w - pad * 2, h: b.h - pad } : areaTeks(b.bentuk, b.w, b.h);
+  const area = g.mode !== "balon" || !b.bentuk ? { x: pad, y: pad / 2, w: b.w - pad * 2, h: b.h - pad } : areaTeks(b.bentuk, b.w, b.h);
+  const pilihan = FONT_BALON.find((f) => f.id === g.font);
+  const keluarga = pilihan && pilihan.id !== "comic" ? FONT_GAYA[pilihan.kunci] : fontFamily;
   return (
     <>
       <BubbleShape b={b} />
@@ -307,13 +325,17 @@ export function IsiBalon({ b, fontFamily }: { b: Bubble; fontFamily: string }) {
         y={area.y}
         width={area.w}
         height={area.h}
-        text={b.text}
-        align="center"
+        text={g.vertikal ? susunVertikal(b.text) : b.text}
+        align={g.vertikal ? "center" : g.rata}
         verticalAlign="middle"
         fontSize={b.fontSize}
-        fontFamily={fontFamily}
-        fontStyle="bold"
-        fill="#111"
+        fontFamily={keluarga}
+        fontStyle={gayaHuruf(g.tebal, g.miring)}
+        fill={g.warnaTeks}
+        stroke={g.stroke && g.tebalStroke > 0 ? g.warnaStroke : undefined}
+        strokeWidth={g.stroke ? g.tebalStroke : 0}
+        fillAfterStrokeEnabled
+        lineJoin="round"
         wrap="word"
         listening={false}
       />
@@ -353,7 +375,7 @@ export function HalamanStatis({ page, gambar, fontFamily }: { page: EditorPage; 
       {page.bubbles
         .filter((b) => b.visible)
         .map((b) => (
-          <Group key={b.id} x={b.x} y={b.y}>
+          <Group key={b.id} x={b.x} y={b.y} rotation={b.gaya?.rotasi ?? 0}>
             <IsiBalon b={b} fontFamily={fontFamily} />
           </Group>
         ))}

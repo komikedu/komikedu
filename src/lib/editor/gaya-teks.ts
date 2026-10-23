@@ -4,7 +4,7 @@ import type { ElemenTeks } from "./types";
  * Pustaka gaya teks komik: judul dan efek suara. Tiap gaya adalah huruf tebal bergaya dengan beberapa lapisan
  * (garis tepi luar, bayangan keras, isi) yang digambar dari belakang ke depan; lapisan terakhir adalah isi huruf.
  */
-export type FontGaya = "bangers" | "luckiest" | "lilita" | "titan" | "comic";
+export type FontGaya = "bangers" | "luckiest" | "lilita" | "titan" | "comic" | "patrick" | "marker" | "fredoka";
 
 export type LapisanTeks = { fill: string; stroke?: string; strokeWidth?: number; dx?: number; dy?: number };
 

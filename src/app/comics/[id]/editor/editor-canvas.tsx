@@ -10,13 +10,18 @@ import { snapPoint, snapRectMove, snapTargets, type Guides, type SnapTargets } f
 import { IkonBendaView } from "./ikon-benda";
 import { useVersiGambar } from "./use-versi-gambar";
 import { FONT_MAX, FONT_MIN } from "@/lib/editor/gaya-teks";
+import { adaPapanKlip } from "@/lib/editor/papan-klip";
 import { useStatusPanel } from "@/lib/editor/status-panel";
 import { muatFontGaya } from "./font-gaya";
 import { GambarPanel, IsiBalon, IsiElemen, LatarPanel, TepiPanel, klipPanel, titikLokal } from "./bentuk-halaman";
-import { useEditor } from "@/lib/editor/store";
+import { seleksiAktif, useEditor } from "@/lib/editor/store";
 import { PAGE_H, PAGE_W, type Bubble, type MathElement, type Panel, type Point } from "@/lib/editor/types";
 
 const FIT_PADDING = 48;
+/** Kelebihan ukuran konten (px) yang dianggap bisa digulir saat menggeser kanvas; di bawahnya hanya lebar scrollbar. */
+const LEBIH_GULIR = 24;
+/** Bagian halaman (px) yang harus tetap terlihat saat kanvas digeser bebas. */
+const SISA_LAYAR = 80;
 
 function useImage(url: string | null) {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
@@ -61,7 +66,7 @@ function PanelView({
   snapTh: number;
   onGuides: (g: Guides | null) => void;
   selected: boolean;
-  tool: "move" | "text" | "mat" | "teksgaya";
+  tool: "move" | "text" | "mat" | "teksgaya" | "pan";
   onSelect: () => void;
   onTextTool: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void;
   onDragState: (dragging: boolean) => void;
@@ -438,6 +443,8 @@ function BubbleView({
   b,
   fontFamily,
   selected,
+  dalamSeleksi,
+  bersama,
   draggable,
   offset,
   onSelect,
@@ -447,15 +454,32 @@ function BubbleView({
   b: Bubble;
   fontFamily: string;
   selected: boolean;
+  /** ikut dipilih bersama balon lain (Shift/Ctrl+klik) */
+  dalamSeleksi: boolean;
+  /** semua balon yang dipilih bersama (termasuk balon ini); digeser bersama saat salah satunya diseret */
+  bersama: string[];
   draggable: boolean;
   /** pergeseran sementara saat panel induknya diseret */
   offset: { dx: number; dy: number };
-  onSelect: () => void;
+  /** `tambah` true bila Shift, Ctrl, atau Cmd ditahan: tambah/lepas dari pilihan, bukan ganti pilihan */
+  onSelect: (tambah: boolean) => void;
   onDragState: (dragging: boolean) => void;
   trRef: React.RefObject<Konva.Transformer | null>;
 }) {
   const update = useEditor((s) => s.updateBubble);
+  const geserBanyak = useEditor((s) => s.geserBalonBanyak);
   const ref = useRef<Konva.Group>(null);
+
+  /** Pasang balon lain yang dipilih bersama pada posisinya semula ditambah pergeseran balon yang diseret. */
+  const ikutkanKawan = (stage: Konva.Stage | null, dx: number, dy: number) => {
+    const st = useEditor.getState();
+    const bubbles = st.pages.find((p) => p.id === st.activePageId)?.bubbles ?? [];
+    for (const id of bersama) {
+      if (id === b.id) continue;
+      const lain = bubbles.find((x) => x.id === id);
+      stage?.findOne(`#balon-${id}`)?.position({ x: (lain?.x ?? 0) + dx, y: (lain?.y ?? 0) + dy });
+    }
+  };
 
   useEffect(() => {
     if (selected && ref.current && trRef.current) {
@@ -468,18 +492,31 @@ function BubbleView({
   return (
     <Group
       ref={ref}
+      id={`balon-${b.id}`}
       x={b.x + offset.dx}
       y={b.y + offset.dy}
+      rotation={b.gaya?.rotasi ?? 0}
       draggable={draggable}
-      onClick={onSelect}
-      onTap={onSelect}
+      onClick={(e) => onSelect(e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey)}
+      onTap={() => onSelect(false)}
       onDragStart={() => {
-        onSelect();
+        if (!dalamSeleksi) onSelect(false);
         onDragState(true);
+      }}
+      onDragMove={(e) => {
+        if (dalamSeleksi) ikutkanKawan(e.target.getStage(), e.target.x() - (b.x + offset.dx), e.target.y() - (b.y + offset.dy));
       }}
       onDragEnd={(e) => {
         onDragState(false);
-        update(b.id, { x: Math.round(e.target.x()), y: Math.round(e.target.y()) });
+        const x = Math.round(e.target.x());
+        const y = Math.round(e.target.y());
+        if (dalamSeleksi && bersama.length > 1) {
+          // semua balon terpilih bergeser sama jauh, satu langkah riwayat
+          ikutkanKawan(e.target.getStage(), x - b.x, y - b.y);
+          geserBanyak(bersama, x - b.x, y - b.y);
+        } else {
+          update(b.id, { x, y });
+        }
       }}
       onTransformEnd={() => {
         const node = ref.current;
@@ -487,10 +524,14 @@ function BubbleView({
         const w = Math.max(80, Math.round(b.w * node.scaleX()));
         const h = Math.max(50, Math.round(b.h * node.scaleY()));
         node.scale({ x: 1, y: 1 });
-        update(b.id, { x: Math.round(node.x()), y: Math.round(node.y()), w, h });
+        const sudut = Math.round(((node.rotation() + 540) % 360) - 180);
+        update(b.id, { x: Math.round(node.x()), y: Math.round(node.y()), w, h, ...(sudut !== (b.gaya?.rotasi ?? 0) ? { gaya: { ...b.gaya, rotasi: sudut } } : {}) });
       }}
     >
+      {/* bidang transparan agar seluruh kotak balon bisa diklik dan diseret, termasuk mode Teks yang tidak punya bentuk */}
+      <Rect width={b.w} height={b.h} fill="#ffffff" opacity={0.01} />
       <IsiBalon b={b} fontFamily={fontFamily} />
+      {dalamSeleksi && <Rect x={-8} y={-8} width={b.w + 16} height={b.h + 16} stroke="#0f766e" strokeWidth={3} dash={[10, 6]} cornerRadius={8} listening={false} />}
       {selected && b.tail && (
         <Circle
           x={b.w / 2 + b.tail.dx}
@@ -553,6 +594,8 @@ export default function EditorCanvas({
   const [, setFontTick] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [scroll, setScroll] = useState({ x: 0, y: 0 });
+  /** pergeseran kanvas oleh guru (alat Geser atau tombol tengah mouse) di luar gulir bawaan */
+  const [geseran, setGeseran] = useState({ x: 0, y: 0 });
   const [guides, setGuides] = useState<Guides | null>(null);
   const [liveImage, setLiveImage] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   /** panel yang sedang disorot saat berkas diseret di atas kanvas, dan pesan hasil pemasangan gambar */
@@ -631,6 +674,8 @@ export default function EditorCanvas({
       if (!berkas.length) return;
       const st = useEditor.getState();
       const panel = st.pages.find((p) => p.id === st.activePageId)?.panels.find((p) => p.id === st.selectedId);
+      // tanpa panel terpilih, Ctrl+V menempel objek yang disalin di editor (bila ada), bukan gambar
+      if (!panel && adaPapanKlip()) return;
       e.preventDefault();
       if (!panel) return setInfoLepas({ ok: false, teks: "Pilih panel dulu, lalu tempel gambarnya." });
       void pasangBerkas(berkas, panel.id);
@@ -645,7 +690,11 @@ export default function EditorCanvas({
   }, [selectedId, selectedLayer]);
 
   const selPanel = page?.panels.find((p) => p.id === selectedId) ?? null;
-  const selBubble = page?.bubbles.find((b) => b.id === selectedId) ?? null;
+  const seleksi = useEditor((s) => s.seleksi);
+  const toggleSeleksiBalon = useEditor((s) => s.toggleSeleksiBalon);
+  const seleksiBalon = seleksiAktif(seleksi, selectedId);
+  // saat beberapa balon dipilih bersama tidak ada balon "utama" (tanpa pegangan ubah ukuran dan toolbar mengambang)
+  const selBubble = seleksiBalon.length ? null : (page?.bubbles.find((b) => b.id === selectedId) ?? null);
   const selElement = page?.elements.find((e) => e.id === selectedId) ?? null;
 
   // lepas Transformer milik jenis yang tidak sedang dipilih
@@ -663,8 +712,10 @@ export default function EditorCanvas({
 
   const fit = Math.min((size.w - FIT_PADDING) / PAGE_W, (size.h - FIT_PADDING) / PAGE_H);
   const scale = Math.max(0.05, fit) * zoom;
-  const offsetX = Math.max(0, (size.w - PAGE_W * scale) / 2);
-  const offsetY = Math.max(FIT_PADDING / 2, (size.h - PAGE_H * scale) / 2);
+  const dasarX = Math.max(0, (size.w - PAGE_W * scale) / 2);
+  const dasarY = Math.max(FIT_PADDING / 2, (size.h - PAGE_H * scale) / 2);
+  const offsetX = dasarX + geseran.x;
+  const offsetY = dasarY + geseran.y;
 
   /** Panel di bawah kursor saat berkas diseret: posisi layar diubah ke koordinat halaman (memperhitungkan gulir, zoom, dan tepi). */
   const panelDariSeretan = (e: React.DragEvent) => {
@@ -719,6 +770,42 @@ export default function EditorCanvas({
     <div
       ref={wrapRef}
       onScroll={(e) => setScroll({ x: e.currentTarget.scrollLeft, y: e.currentTarget.scrollTop })}
+      // geser kanvas: tahan tombol tengah mouse (roda) lalu seret, atau seret biasa saat alat Geser aktif. Fase capture agar Konva
+      // tidak ikut menanganinya. Sumbu yang masih bisa digulir digulir; sumbu yang muat di layar digeser bebas. Klik dua kali tombol tengah mengembalikan posisi.
+      onMouseDownCapture={(e) => {
+        const area = wrapRef.current;
+        if (!area || !(e.button === 1 || (e.button === 0 && tool === "pan"))) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.button === 1 && e.detail === 2) return setGeseran({ x: 0, y: 0 });
+        const mulai = { x: e.clientX, y: e.clientY, kiri: area.scrollLeft, atas: area.scrollTop, g: geseran };
+        // selisih sekecil lebar scrollbar (mis. halaman pas selebar layar, lalu scrollbar vertikal memakan ~15px) bukan konten yang
+        // bisa digulir; sumbu itu diperlakukan muat di layar supaya seretan tetap menggeser halaman
+        const bisaX = area.scrollWidth > area.clientWidth + LEBIH_GULIR;
+        const bisaY = area.scrollHeight > area.clientHeight + LEBIH_GULIR;
+        area.style.cursor = "grabbing";
+        // halaman tidak boleh digeser sampai hilang dari layar: sisakan SISA_LAYAR px tetap terlihat
+        const tahanGeser = (g: number, dasar: number, ukuranHalaman: number, ukuranLayar: number) =>
+          Math.min(ukuranLayar - SISA_LAYAR - dasar, Math.max(SISA_LAYAR - ukuranHalaman - dasar, g));
+        const geser = (ev: MouseEvent) => {
+          const dx = ev.clientX - mulai.x;
+          const dy = ev.clientY - mulai.y;
+          if (bisaX) area.scrollLeft = mulai.kiri - dx;
+          if (bisaY) area.scrollTop = mulai.atas - dy;
+          setGeseran({
+            x: bisaX ? mulai.g.x : tahanGeser(mulai.g.x + dx, dasarX, PAGE_W * scale, size.w),
+            y: bisaY ? mulai.g.y : tahanGeser(mulai.g.y + dy, dasarY, PAGE_H * scale, size.h),
+          });
+        };
+        const selesai = () => {
+          area.style.cursor = "";
+          window.removeEventListener("mousemove", geser);
+          window.removeEventListener("mouseup", selesai);
+        };
+        window.addEventListener("mousemove", geser);
+        window.addEventListener("mouseup", selesai);
+      }}
+      onAuxClick={(e) => e.button === 1 && e.preventDefault()}
       onDragOver={(e) => {
         if (!seretanBerkas(e.dataTransfer.types)) return;
         e.preventDefault();
@@ -737,11 +824,11 @@ export default function EditorCanvas({
         void pasangBerkas(Array.from(e.dataTransfer.files), panel.id);
       }}
       className="relative h-full w-full overflow-auto"
-      style={{ cursor: tool === "move" ? "default" : "crosshair" }}
+      style={{ cursor: tool === "move" ? "default" : tool === "pan" ? "grab" : "crosshair" }}
     >
       <Stage
-        width={Math.max(size.w, PAGE_W * scale + offsetX * 2)}
-        height={Math.max(size.h, PAGE_H * scale + offsetY * 2)}
+        width={Math.max(size.w, PAGE_W * scale + dasarX * 2)}
+        height={Math.max(size.h, PAGE_H * scale + dasarY * 2)}
         onMouseDown={(e) => {
           if (e.target === e.target.getStage() || e.target.name() === "page-bg") select(null);
         }}
@@ -797,10 +884,12 @@ export default function EditorCanvas({
               key={b.id}
               b={b}
               fontFamily={fontFamily}
-              selected={b.id === selectedId}
+              selected={b.id === selectedId && !seleksiBalon.length}
+              dalamSeleksi={seleksiBalon.includes(b.id)}
+              bersama={seleksiBalon}
               draggable={tool === "move"}
               offset={drag && drag.panelId === b.panelId ? drag : { dx: 0, dy: 0 }}
-              onSelect={() => tool === "move" && select(b.id)}
+              onSelect={(tambah) => tool === "move" && (tambah ? toggleSeleksiBalon(b.id) : select(b.id))}
               onDragState={setDragging}
               trRef={trRef}
             />
@@ -823,7 +912,9 @@ export default function EditorCanvas({
           />
           <Transformer
             ref={trRef}
-            rotateEnabled={false}
+            rotateEnabled
+            rotationSnaps={[0, 45, 90, 135, 180, -135, -90, -45]}
+            rotationSnapTolerance={6}
             keepRatio={false}
             borderStroke="#0f766e"
             anchorStroke="#0f766e"

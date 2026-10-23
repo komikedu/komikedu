@@ -8,11 +8,13 @@ import {
   Apple,
   Check,
   ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   Eye,
   EyeOff,
   FilePlus,
+  Hand,
   Home,
   Loader2,
   MousePointer2,
@@ -39,14 +41,17 @@ import { jumlahBendaDiAdegan } from "@/lib/ai/jumlah";
 import { IKON_BENDA, MAX_JUMLAH, MAX_KOLOM, namaIkon } from "@/lib/editor/math-elements";
 import { useStatusPanel } from "@/lib/editor/status-panel";
 import { bacaHalamanAktif, simpanHalamanAktif } from "@/lib/editor/halaman-aktif";
-import { applyPanelImages, clearHistory, redo, selectSelectedBubble, selectSelectedElement, selectSelectedPanel, undo, useEditor } from "@/lib/editor/store";
+import { applyPanelImages, clearHistory, redo, selectSelectedBubble, selectSelectedElement, selectSelectedPanel, seleksiAktif, undo, useEditor } from "@/lib/editor/store";
 import type { BubbleKind, EditorPage, MathElement, Panel as EditorPanel } from "@/lib/editor/types";
 import { GAYA } from "@/lib/comics/schema";
 import { alamatPotret, buatPromptFlow, rasioTerdekat, tokohDiTeks } from "@/lib/comics/prompt-flow";
 import type { Tokoh } from "@/lib/comics/tokoh";
 import { AdeganInput, NamaTokohContext } from "./adegan-input";
+import { salin, potong, tempel } from "@/lib/editor/papan-klip";
 import { LatarSection } from "./latar-section";
-import { PengaturanEkor, PilihBentukBalon } from "./pilih-bentuk-balon";
+import { PemisahTinggi, useTinggiPanel } from "./pemisah-tinggi";
+import { BalonBanyak } from "./pilih-bentuk-balon";
+import { PengaturanBalon } from "./pengaturan-balon";
 import { IkatPanel, Putaran, StikerTab, TeksTab } from "./teks-tab";
 import { DialogTokohNaskah } from "./dialog-tokoh-naskah";
 import { hapusLatar, siapkanHapusLatar } from "./hapus-latar";
@@ -68,17 +73,22 @@ function ToolButton({ label, active, disabled, onClick, children }: { label: str
   return (
     <button
       type="button"
-      title={label}
       aria-label={label}
       aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
-      className={`flex w-14 flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] disabled:cursor-not-allowed disabled:opacity-40 ${
+      className={`group relative grid h-10 w-10 place-items-center rounded-lg disabled:cursor-not-allowed disabled:opacity-40 ${
         active ? "bg-brand text-brand-foreground" : "hover:bg-surface-muted"
       }`}
     >
       {children}
-      {label}
+      {/* nama alat hanya muncul saat kursor di atas tombol atau tombol difokus dengan keyboard */}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-xs font-medium text-white opacity-0 shadow transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+      >
+        {label}
+      </span>
     </button>
   );
 }
@@ -248,7 +258,28 @@ function LayersPanel() {
   const updateElement = useEditor((s) => s.updateElement);
   const selectedId = useEditor((s) => s.selectedId);
   const select = useEditor((s) => s.select);
+  const toggleSeleksiBalon = useEditor((s) => s.toggleSeleksiBalon);
+  const seleksi = useEditor((s) => s.seleksi);
+  const balonBanyak = seleksiAktif(seleksi, selectedId);
   const update = useEditor((s) => s.updateBubble);
+  /** panel (atau "luar") yang lipatannya tertutup; hanya tampilan, tidak disimpan */
+  const [tertutup, setTertutup] = useState<Set<string>>(new Set());
+  const lipat = (kunci: string) =>
+    setTertutup((t) => {
+      const baru = new Set(t);
+      if (!baru.delete(kunci)) baru.add(kunci);
+      return baru;
+    });
+
+  // memilih balon atau elemen dari kanvas membuka lipatan panelnya agar barisnya terlihat
+  useEffect(() => {
+    const st = useEditor.getState();
+    const pg = st.pages.find((p) => p.id === st.activePageId);
+    const balon = pg?.bubbles.find((b) => b.id === selectedId);
+    const elemen = pg?.elements.find((e) => e.id === selectedId);
+    const kunci = balon ? balon.panelId : elemen ? (elemen.panelId ?? "luar") : null;
+    if (kunci) setTertutup((t) => (t.has(kunci) ? new Set([...t].filter((k) => k !== kunci)) : t));
+  }, [selectedId]);
   if (!page) return null;
 
   return (
@@ -257,23 +288,36 @@ function LayersPanel() {
       <ul className="mt-2 space-y-1">
         {page.panels.map((panel, i) => (
           <li key={panel.id}>
-            <button
-              type="button"
-              onClick={() => select(panel.id)}
-              aria-current={panel.id === selectedId && selectedLayer === "panel"}
-              className={`flex w-full items-center gap-1 rounded-md px-1 py-1 text-left text-sm font-medium ${
+            <div
+              className={`flex w-full items-center rounded-md text-sm font-medium ${
                 panel.id === selectedId && selectedLayer === "panel" ? "bg-blue-600 text-white" : "hover:bg-surface-muted"
               }`}
             >
-              <ChevronDown size={14} /> Panel {i + 1}
-            </button>
-            <ul className="ml-4 space-y-1">
+              <button
+                type="button"
+                onClick={() => lipat(panel.id)}
+                aria-expanded={!tertutup.has(panel.id)}
+                aria-label={`${tertutup.has(panel.id) ? "Buka" : "Tutup"} isi Panel ${i + 1}`}
+                className="grid h-7 w-6 shrink-0 place-items-center rounded-md"
+              >
+                {tertutup.has(panel.id) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => select(panel.id)}
+                aria-current={panel.id === selectedId && selectedLayer === "panel"}
+                className="min-w-0 flex-1 py-1 pr-1 text-left"
+              >
+                Panel {i + 1}
+              </button>
+            </div>
+            <ul className="ml-4 space-y-1" hidden={tertutup.has(panel.id)}>
               {page.bubbles
                 .filter((b) => b.panelId === panel.id)
                 .map((b) => (
                   <li key={b.id}>
                     <div
-                      className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs ${b.id === selectedId ? "bg-brand text-brand-foreground" : "hover:bg-surface-muted"}`}
+                      className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs ${b.id === selectedId || balonBanyak.includes(b.id) ? "bg-brand text-brand-foreground" : "hover:bg-surface-muted"}`}
                     >
                       <button
                         type="button"
@@ -282,7 +326,12 @@ function LayersPanel() {
                       >
                         {b.visible ? <Eye size={14} /> : <EyeOff size={14} />}
                       </button>
-                      <button type="button" onClick={() => select(b.id)} className="min-w-0 flex-1 truncate text-left">
+                      <button
+                        type="button"
+                        onClick={(ev) => (ev.shiftKey || ev.ctrlKey || ev.metaKey ? toggleSeleksiBalon(b.id) : select(b.id))}
+                        title="Tahan Shift atau Ctrl untuk memilih beberapa balon"
+                        className="min-w-0 flex-1 truncate text-left"
+                      >
                         <span className="mr-1 inline-grid h-5 w-5 place-items-center rounded bg-white/70 text-[10px] font-bold text-gray-700">T</span>
                         {b.text || "(kosong)"}
                       </button>
@@ -318,8 +367,15 @@ function LayersPanel() {
       </ul>
       {page.elements.some((e) => e.panelId === null) && (
         <div className="mt-2">
-          <p className="px-1 py-1 text-sm font-medium">Di luar panel</p>
-          <ul className="ml-4 space-y-1">
+          <button
+            type="button"
+            onClick={() => lipat("luar")}
+            aria-expanded={!tertutup.has("luar")}
+            className="flex w-full items-center gap-1 rounded-md px-1 py-1 text-left text-sm font-medium hover:bg-surface-muted"
+          >
+            {tertutup.has("luar") ? <ChevronRight size={14} /> : <ChevronDown size={14} />} Di luar panel
+          </button>
+          <ul className="ml-4 space-y-1" hidden={tertutup.has("luar")}>
             {page.elements
               .filter((e) => e.panelId === null)
               .map((e) => (
@@ -388,7 +444,8 @@ function FlowSection({ panel, ai }: { panel: EditorPanel; ai: EditAiProps }) {
   const acuan = Object.fromEntries(bergambar.filter((t) => terunduh[t.nama]).map((t) => [t.nama, namaBerkasAcuan(t.nama)]));
   const rasio = rasioTerdekat(panel.w, panel.h);
   const gayaPrompt = (GAYA.find((g) => g.id === ai.gaya) ?? GAYA[0]).prompt;
-  const prompt = adegan ? buatPromptFlow({ adegan, gaya: gayaPrompt, tokoh: tampil, rasio, acuan }) : "";
+  const jumlahBalon = bubbles.filter((b) => b.panelId === panel.id && b.visible && b.text.trim()).length;
+  const prompt = adegan ? buatPromptFlow({ adegan, gaya: gayaPrompt, tokoh: tampil, rasio, acuan, balon: jumlahBalon }) : "";
 
   async function salin() {
     try {
@@ -879,64 +936,17 @@ function LayerTab({ ai }: { ai: EditAiProps }) {
   const bubble = useEditor(selectSelectedBubble);
   const update = useEditor((s) => s.updateBubble);
   const del = useEditor((s) => s.deleteBubble);
+  const seleksi = useEditor((s) => s.seleksi);
+  const selectedId = useEditor((s) => s.selectedId);
+  const banyak = seleksiAktif(seleksi, selectedId);
+  if (banyak.length) return <BalonBanyak ids={banyak} />;
   if (element) return <ElementTab />;
   if (panel) return <PanelTab ai={ai} />;
   if (!bubble) return <p className="p-4 text-sm text-gray-500">Pilih panel, balon, atau elemen di kanvas untuk mengubahnya.</p>;
 
   return (
     <div className="space-y-4 p-4 text-sm">
-      <div>
-        <span className="font-semibold">Jenis</span>
-        <div className="mt-1 grid grid-cols-3 gap-2">
-          {(Object.keys(KIND_LABEL) as BubbleKind[]).map((k) => (
-            <button
-              key={k}
-              type="button"
-              aria-pressed={bubble.kind === k}
-              onClick={() =>
-                update(bubble.id, {
-                  kind: k,
-                  bentuk: undefined,
-                  tail: k === "narasi" ? null : (bubble.tail ?? { dx: 20, dy: bubble.h / 2 + 40 }),
-                })
-              }
-              className={`rounded-lg border px-2 py-2 text-xs ${bubble.kind === k ? "border-brand bg-brand text-brand-foreground" : "border-line hover:bg-surface-muted"}`}
-            >
-              {KIND_LABEL[k]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <PilihBentukBalon bubble={bubble} />
-
-      <div>
-        <label htmlFor="teks-balon" className="font-semibold">Teks</label>
-        <textarea
-          id="teks-balon"
-          rows={4}
-          maxLength={300}
-          value={bubble.text}
-          onChange={(e) => update(bubble.id, { text: e.target.value })}
-          className="mt-1 w-full rounded border border-line px-2 py-1.5"
-        />
-        <p className="text-right text-xs text-gray-500">{bubble.text.length} / 300</p>
-      </div>
-
-      <div>
-        <label htmlFor="ukuran-font" className="font-semibold">Ukuran huruf: {bubble.fontSize}</label>
-        <input
-          id="ukuran-font"
-          type="range"
-          min={14}
-          max={48}
-          value={bubble.fontSize}
-          onChange={(e) => update(bubble.id, { fontSize: Number(e.target.value) })}
-          className="mt-1 w-full"
-        />
-      </div>
-
-      <PengaturanEkor key={bubble.id} bubble={bubble} />
+      <PengaturanBalon bubble={bubble} />
 
       <button type="button" onClick={() => del(bubble.id)} className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-danger hover:bg-surface-muted">
         <Trash2 size={14} /> Hapus balon
@@ -1294,6 +1304,8 @@ export function EditorShell({
     setReady(true);
   }, [init, initialPages, comicId]);
 
+  const panelHalamanRef = useRef<HTMLDivElement>(null);
+  const tinggiHalaman = useTinggiPanel(panelHalamanRef);
   const halamanAktif = useEditor((s) => s.activePageId);
   useEffect(() => {
     if (ready && comicId && halamanAktif) simpanHalamanAktif(comicId, halamanAktif);
@@ -1304,12 +1316,28 @@ export function EditorShell({
     setTab(selectedId ? "layer" : "halaman");
   }, [selectedId]);
 
+  // tempel (Ctrl+V) objek yang disalin di editor; gambar dari papan klip sistem ditangani kanvas (dipasang ke panel)
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable]")) return;
+      const st = useEditor.getState();
+      const panelTerpilih = !!st.pages.find((p) => p.id === st.activePageId)?.panels.some((p) => p.id === st.selectedId);
+      // gambar dari papan klip sistem dipasang ke panel yang dipilih (oleh kanvas); tanpa panel terpilih, objek yang disalin di editor ditempel
+      if (panelTerpilih && Array.from(e.clipboardData?.files ?? []).some((f) => f.type.startsWith("image/"))) return;
+      if (tempel()) e.preventDefault();
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (el.closest("input, textarea, select, [contenteditable]")) return;
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === "z") {
+      if (mod && !e.shiftKey && (e.key.toLowerCase() === "c" || e.key.toLowerCase() === "x")) {
+        if (e.key.toLowerCase() === "c" ? salin() : potong()) e.preventDefault();
+      } else if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) redo();
         else undo();
@@ -1319,6 +1347,8 @@ export function EditorShell({
       } else if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
         e.preventDefault();
         const st = useEditor.getState();
+        const banyak = seleksiAktif(st.seleksi, st.selectedId);
+        if (banyak.length) return st.deleteBalonBanyak(banyak);
         const isPanel = st.pages.some((p) => p.id === st.activePageId && p.panels.some((x) => x.id === selectedId));
         if (isPanel && st.selectedLayer === "gambar") return; // gambar dibuat server, tidak dihapus dari sini
         if (isPanel) st.deletePanel(selectedId);
@@ -1339,7 +1369,7 @@ export function EditorShell({
   if (!ready || !page) return <div className="grid h-screen place-items-center text-sm text-gray-500">Memuat editor...</div>;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-canvas text-foreground">
+    <div className="fixed inset-0 flex overflow-hidden overscroll-none bg-canvas text-foreground">
       <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-surface">
         <div className="flex flex-col gap-2.5 border-b border-line p-3">
           <div className="min-w-0">
@@ -1369,7 +1399,10 @@ export function EditorShell({
             <TombolEkspor judul={title} fontFamily={fontFamily} />
           </div>
         </div>
-        <PagesPanel />
+        <div ref={panelHalamanRef} style={tinggiHalaman.tinggi ? { height: tinggiHalaman.tinggi } : undefined} className={`shrink-0 overflow-y-auto ${tinggiHalaman.tinggi ? "" : "max-h-[50%]"}`}>
+          <PagesPanel />
+        </div>
+        <PemisahTinggi panel={panelHalamanRef} {...tinggiHalaman} />
         <LayersPanel />
       </aside>
 
@@ -1382,6 +1415,9 @@ export function EditorShell({
         <div role="toolbar" aria-label="Alat" className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-surface p-1.5 shadow-lg">
           <ToolButton label="Pilih" active={tool === "move"} onClick={() => setTool("move")}>
             <MousePointer2 size={18} />
+          </ToolButton>
+          <ToolButton label="Geser kanvas (atau tahan tombol tengah mouse)" active={tool === "pan"} onClick={() => setTool("pan")}>
+            <Hand size={18} />
           </ToolButton>
           <ToolButton label="Teks" active={tool === "text"} onClick={() => setTool("text")}>
             <Type size={18} />
@@ -1402,7 +1438,7 @@ export function EditorShell({
         </div>
         {tool !== "move" && (
           <p role="status" className="absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/80 px-3 py-1 text-xs text-white">
-            {tool === "text" ? "Klik di dalam panel untuk menaruh balon." : tool === "teksgaya" ? "Klik di dalam panel untuk menaruh teks bergaya (judul atau efek suara)." : "Klik di dalam panel untuk menaruh kumpulan benda (jumlah pasti)."} Esc untuk batal.
+            {tool === "pan" ? "Seret untuk menggeser kanvas. Klik dua kali tombol tengah mouse untuk mengembalikan posisi." : tool === "text" ? "Klik di dalam panel untuk menaruh balon." : tool === "teksgaya" ? "Klik di dalam panel untuk menaruh teks bergaya (judul atau efek suara)." : "Klik di dalam panel untuk menaruh kumpulan benda (jumlah pasti)."} Esc untuk batal.
           </p>
         )}
 

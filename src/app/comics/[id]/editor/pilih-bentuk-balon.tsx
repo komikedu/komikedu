@@ -66,6 +66,12 @@ function Ikon({ id }: { id: BentukBalon }) {
   );
 }
 
+/** Perubahan satu balon saat bentuknya diganti: jenis menyesuaikan (awan = pikiran), ekor dipertahankan, dan ruang diperbesar bila perlu. */
+function perubahanBentuk(bubble: Bubble, bentuk: BentukBalon, jenis: "bicara" | "pikir") {
+  const ukuran = ukuranBentuk(bentuk, bubble.w, bubble.h);
+  return { bentuk, kind: jenis, tail: bubble.tail ?? { dx: 20, dy: ukuran.h / 2 + 40 }, ...ukuran };
+}
+
 /** Pilihan bentuk balon dialog; memilih bentuk juga menyesuaikan jenis balon (awan = pikiran) dan memberi ruang bila bentuknya bergerigi. */
 export function PilihBentukBalon({ bubble }: { bubble: Bubble }) {
   const update = useEditor((s) => s.updateBubble);
@@ -83,10 +89,7 @@ export function PilihBentukBalon({ bubble }: { bubble: Bubble }) {
             title={b.nama}
             aria-label={b.nama}
             aria-pressed={aktif === b.id}
-            onClick={() => {
-              const ukuran = ukuranBentuk(b.id, bubble.w, bubble.h);
-              update(bubble.id, { bentuk: b.id, kind: b.jenis, tail: bubble.tail ?? { dx: 20, dy: ukuran.h / 2 + 40 }, ...ukuran });
-            }}
+            onClick={() => update(bubble.id, perubahanBentuk(bubble, b.id, b.jenis))}
             className={`rounded-lg border p-1 ${aktif === b.id ? "border-brand ring-2 ring-brand/40" : "border-line hover:bg-surface-muted"}`}
             style={{ background: "#e9edf2" }}
           >
@@ -157,6 +160,93 @@ export function PengaturanEkor({ bubble }: { bubble: Bubble }) {
           <p className="text-gray-500">Ujung ekor juga bisa diseret langsung di kanvas.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Petunjuk dan pintasan memilih beberapa balon sekaligus, di tab satu balon. */
+export function PetunjukPilihBanyak() {
+  const semua = useEditor((s) => s.pilihSemuaBalon);
+  const jumlah = useEditor((s) => s.pages.find((p) => p.id === s.activePageId)?.bubbles.filter((b) => b.visible).length ?? 0);
+  if (jumlah < 2) return null;
+  return (
+    <p className="rounded-lg bg-surface-muted px-3 py-2 text-xs text-gray-600">
+      Tahan <kbd className="rounded border border-line bg-white px-1">Shift</kbd> lalu klik balon lain untuk memilih beberapa sekaligus, atau{" "}
+      <button type="button" onClick={semua} className="font-semibold text-brand underline">
+        pilih semua balon
+      </button>
+      .
+    </p>
+  );
+}
+
+/** Pengaturan bersama untuk beberapa balon yang dipilih: ukuran huruf, bentuk, dan hapus. Perubahan berlaku ke semuanya dalam satu langkah riwayat. */
+export function BalonBanyak({ ids }: { ids: string[] }) {
+  const balon = useEditor((s) => s.pages.find((p) => p.id === s.activePageId)?.bubbles ?? []);
+  const ubah = useEditor((s) => s.updateBalonBanyak);
+  const hapus = useEditor((s) => s.deleteBalonBanyak);
+  const select = useEditor((s) => s.select);
+  const update = useEditor((s) => s.updateBubble);
+  const dipilih = balon.filter((b) => ids.includes(b.id));
+  if (!dipilih.length) return null;
+
+  const ukuran = new Set(dipilih.map((b) => b.fontSize));
+  const sama = ukuran.size === 1;
+  const nilai = dipilih[0].fontSize;
+  const bukanNarasi = dipilih.filter((b) => b.kind !== "narasi");
+
+  return (
+    <div className="space-y-4 p-4 text-sm">
+      <div>
+        <h3 className="font-semibold">{dipilih.length} balon dipilih</h3>
+        <p className="mt-1 text-xs text-gray-500">Perubahan di sini berlaku ke semua balon yang dipilih. Shift+klik balon untuk menambah atau melepas.</p>
+      </div>
+
+      <div>
+        <label htmlFor="font-banyak" className="font-semibold">
+          Ukuran huruf: {sama ? nilai : "bervariasi"}
+        </label>
+        <input id="font-banyak" type="range" min={10} max={96} value={nilai} onChange={(e) => ubah(ids, { fontSize: Number(e.target.value) })} className="mt-1 w-full accent-brand" />
+        <div className="mt-1 flex gap-2">
+          <button type="button" onClick={() => ubah(ids, { fontSize: Math.max(10, nilai - 2) })} className="flex-1 rounded-lg border border-line px-2 py-1.5 text-xs hover:bg-surface-muted">
+            Kecilkan
+          </button>
+          <button type="button" onClick={() => ubah(ids, { fontSize: Math.min(96, nilai + 2) })} className="flex-1 rounded-lg border border-line px-2 py-1.5 text-xs hover:bg-surface-muted">
+            Besarkan
+          </button>
+        </div>
+        {!sama && <p className="mt-1 text-xs text-gray-500">Ukuran berbeda-beda. Menggeser slider menyamakan semuanya.</p>}
+      </div>
+
+      {bukanNarasi.length > 0 && (
+        <div>
+          <span className="font-semibold">Bentuk balon</span>
+          <div className="mt-1 grid grid-cols-3 gap-2">
+            {BENTUK_BALON.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                title={b.nama}
+                aria-label={b.nama}
+                onClick={() => bukanNarasi.forEach((x) => update(x.id, perubahanBentuk(x, b.id, b.jenis)))}
+                className="rounded-lg border border-line p-1 hover:bg-surface-muted"
+                style={{ background: "#e9edf2" }}
+              >
+                <Ikon id={b.id} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <button type="button" onClick={() => select(dipilih[0].id)} className="flex-1 rounded-lg border border-line px-3 py-2 text-xs font-semibold hover:bg-surface-muted">
+          Batal pilih
+        </button>
+        <button type="button" onClick={() => hapus(ids)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs font-semibold text-danger hover:bg-surface-muted">
+          Hapus {dipilih.length} balon
+        </button>
+      </div>
     </div>
   );
 }

@@ -206,3 +206,71 @@ export function lapisanTeks(el: Pick<ElemenTeks, "gaya" | "warna">): LapisanTeks
   const warna = el.warna;
   return lapisan.map((l, i) => (i === lapisan.length - 1 ? { ...l, fill: warna } : l));
 }
+
+const adaOffset = (l: LapisanTeks) => !!(l.dx || l.dy);
+
+/** Lapisan garis tepi terluar: yang tertebal di antara lapisan tanpa offset (bukan bayangan) dan bukan isi huruf; -1 bila tidak ada. */
+function indeksTepiLuar(lap: LapisanTeks[]): number {
+  let hasil = -1;
+  let tebal = 0;
+  lap.forEach((l, i) => {
+    if (i < lap.length - 1 && !adaOffset(l) && (l.strokeWidth ?? 0) > tebal) {
+      hasil = i;
+      tebal = l.strokeWidth ?? 0;
+    }
+  });
+  return hasil;
+}
+
+const indeksBayangan = (lap: LapisanTeks[]) => lap.findIndex((l, i) => i < lap.length - 1 && adaOffset(l));
+
+/** Nilai bawaan pengaturan lanjutan sebuah gaya, dalam satuan "per huruf 100". */
+export function bawaanLanjut(gayaId: string) {
+  const g = gayaTeks(gayaId);
+  const k = 100 / g.fontSize;
+  const lap = g.lapisan;
+  const luar = indeksTepiLuar(lap);
+  const bay = indeksBayangan(lap);
+  return {
+    tebalTepi: 1,
+    warnaTepi: luar >= 0 ? lap[luar].fill : "#111111",
+    bayanganJarak: bay >= 0 ? Math.round(Math.max(Math.abs(lap[bay].dx ?? 0), Math.abs(lap[bay].dy ?? 0)) * k) : 0,
+    bayanganTebal: bay >= 0 ? Math.round((lap[bay].strokeWidth ?? 0) * k) : luar >= 0 ? Math.round((lap[luar].strokeWidth ?? 0) * k) : 12,
+    warnaBayangan: bay >= 0 ? lap[bay].fill : "#111111",
+  };
+}
+
+export const ADA_LANJUT = ["tebalTepi", "warnaTepi", "bayanganJarak", "bayanganTebal", "warnaBayangan"] as const;
+
+/**
+ * Lapisan siap gambar untuk sebuah teks: lapisan gaya yang diskalakan mengikuti ukuran huruf (garis tepi dan bayangan
+ * ikut membesar dan mengecil), lalu pengaturan lanjutan guru (tebal dan warna garis tepi, jarak/tebal/warna bayangan).
+ */
+export function lapisanLanjut(el: Pick<ElemenTeks, "gaya" | "warna" | "fontSize" | "tebalTepi" | "warnaTepi" | "bayanganJarak" | "bayanganTebal" | "warnaBayangan">): LapisanTeks[] {
+  const g = gayaTeks(el.gaya);
+  const dasar = lapisanTeks(el);
+  const skala = el.fontSize / g.fontSize;
+  const satuan = el.fontSize / 100;
+  const tepi = el.tebalTepi ?? 1;
+  const akhir = dasar.length - 1;
+  let lap: LapisanTeks[] = dasar.map((l, i) => ({
+    ...l,
+    strokeWidth: l.strokeWidth !== undefined ? l.strokeWidth * skala * (i < akhir ? tepi : 1) : undefined,
+    dx: l.dx !== undefined ? l.dx * skala : undefined,
+    dy: l.dy !== undefined ? l.dy * skala : undefined,
+  }));
+
+  const luar = indeksTepiLuar(lap);
+  if (el.warnaTepi && luar >= 0) lap[luar] = { ...lap[luar], fill: el.warnaTepi, stroke: el.warnaTepi };
+
+  if (el.bayanganJarak !== undefined || el.bayanganTebal !== undefined || el.warnaBayangan) {
+    const b = bawaanLanjut(el.gaya);
+    const jarak = (el.bayanganJarak ?? b.bayanganJarak) * satuan;
+    const tebal = (el.bayanganTebal ?? b.bayanganTebal) * satuan;
+    const warna = el.warnaBayangan ?? b.warnaBayangan;
+    const bay = indeksBayangan(lap);
+    if (bay >= 0) lap.splice(bay, 1);
+    if (jarak > 0) lap = [{ fill: warna, stroke: tebal > 0 ? warna : undefined, strokeWidth: tebal > 0 ? tebal : undefined, dx: jarak, dy: jarak * 1.25 }, ...lap];
+  }
+  return lap;
+}

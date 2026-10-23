@@ -67,7 +67,7 @@ export function AdeganInput({
       */}
       <div
         aria-hidden
-        className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded border border-transparent px-2 py-1.5 text-xs text-transparent`}
+        className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-2 py-1.5 text-xs leading-relaxed text-transparent`}
       >
         {pecahNama(value, nama).map((p, i) =>
           p.tokoh ? (
@@ -114,7 +114,7 @@ export function AdeganInput({
           }
         }}
         placeholder="Gambarkan adegannya tanpa teks. Ketik @ untuk menyebut tokoh."
-        className={`relative block w-full resize-none overflow-hidden rounded border bg-transparent px-2 py-1.5 text-xs ${peringatan ? "border-amber-300" : "border-line"}`}
+        className={`relative block w-full resize-none overflow-hidden rounded-md border bg-transparent px-2 py-1.5 text-xs leading-relaxed transition-colors placeholder:text-gray-400 hover:bg-surface-muted/70 focus:bg-surface focus:shadow-sm focus:outline-none ${peringatan ? "border-dashed border-amber-300 focus:border-amber-400" : "border-transparent focus:border-line"}`}
       />
       {terbuka && (
         <ul role="listbox" aria-label="Pilih tokoh" className="absolute left-0 right-0 z-20 mt-1 rounded-lg border border-line bg-surface py-1 text-xs shadow-lg">

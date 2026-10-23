@@ -2,8 +2,8 @@
 
 import { Circle, Ellipse, Group, Image as KImage, Line, Rect, Shape, Text } from "react-konva";
 import type Konva from "konva";
-import { areaTeks, garisGerak, lingkaranAwan, titikGerigi } from "@/lib/editor/bentuk-balon";
-import { burstTeks, gayaTeks, lapisanTeks, titikBurst } from "@/lib/editor/gaya-teks";
+import { LEBAR_EKOR_BAWAAN, areaTeks, garisGerak, jalurKotak, jalurOval, lingkaranAwan, sisipkanEkor, titikGerigi } from "@/lib/editor/bentuk-balon";
+import { burstTeks, gayaTeks, lapisanLanjut, titikBurst } from "@/lib/editor/gaya-teks";
 import { irisanSinar, jajaranGaris, jariSinar, titikGradasi, titikHalftone } from "@/lib/editor/latar-panel";
 import { layoutKumpulan } from "@/lib/editor/math-elements";
 import { PAGE_H, PAGE_W, type Bubble, type EditorPage, type ElemenStiker, type ElemenTeks, type MathElement, type Panel } from "@/lib/editor/types";
@@ -129,7 +129,7 @@ export function TeksGayaShape({ el }: { el: ElemenTeks }) {
           }}
         />
       )}
-      {lapisanTeks(el).map((l, i) => (
+      {lapisanLanjut(el).map((l, i) => (
         <Text
           key={i}
           x={l.dx ?? 0}
@@ -209,13 +209,22 @@ function EkorPikir({ b }: { b: Bubble }) {
   );
 }
 
-/** Balon dengan bentuk pilihan (kotak, awan, ledakan, teriakan, oval bergerak); ekor segitiga, atau lingkaran untuk awan. */
-function BalonBergaya({ b, tailPoints }: { b: Bubble; tailPoints: number[] | null }) {
-  const cx = b.w / 2;
-  const cy = b.h / 2;
-  const bentuk = b.bentuk!;
-  const segitiga = bentuk !== "awan" && tailPoints;
-  const tutup = segitiga ? <Line points={tailPoints.slice(0, 2).concat(tailPoints.slice(4))} stroke="#fff" strokeWidth={6} listening={false} /> : null;
+/** Satu garis tertutup: badan balon dengan ekor yang menyambung langsung di garis tepinya. */
+function JalurBalon({ b, poligon, bayangan, runcing }: { b: Bubble; poligon: { x: number; y: number }[]; bayangan?: boolean; runcing?: boolean }) {
+  const tail = b.tail;
+  const titik = tail ? sisipkanEkor(poligon, { x: b.w / 2, y: b.h / 2 }, { x: b.w / 2 + tail.dx, y: b.h / 2 + tail.dy }, tail.lebar ?? LEBAR_EKOR_BAWAAN) : poligon;
+  const datar = titik.flatMap((t) => [t.x, t.y]);
+  return (
+    <>
+      {bayangan && <Line points={datar.map((v) => v + 7)} closed fill="#111" lineJoin="round" listening={false} />}
+      <Line points={datar} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin={runcing ? "miter" : "round"} miterLimit={6} />
+    </>
+  );
+}
+
+/** Balon dengan bentuk pilihan; garis tepi dan ekor menyambung jadi satu, kecuali awan yang memakai lingkaran pikiran. */
+function BalonBergaya({ b }: { b: Bubble }) {
+  const bentuk = b.bentuk ?? "oval";
 
   if (bentuk === "awan") {
     const { lingkaran, tengah } = lingkaranAwan(b.w, b.h);
@@ -250,38 +259,14 @@ function BalonBergaya({ b, tailPoints }: { b: Bubble; tailPoints: number[] | nul
       </>
     );
   }
-
-  if (bentuk === "kotak") {
-    return (
-      <>
-        <Rect x={7} y={7} width={b.w} height={b.h} fill="#111" cornerRadius={22} listening={false} />
-        {segitiga && <Line points={tailPoints} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin="round" />}
-        <Rect width={b.w} height={b.h} fill="#fff" stroke="#111" strokeWidth={4} cornerRadius={22} />
-        {tutup}
-      </>
-    );
-  }
-
-  if (bentuk === "ledakan" || bentuk === "teriak") {
-    const poligon = bentuk === "ledakan" ? titikGerigi(b.w, b.h, 13, 0.62) : titikGerigi(b.w, b.h, 22, 0.8);
-    return (
-      <>
-        {segitiga && <Line points={tailPoints} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin="round" />}
-        <Line points={poligon.flatMap((t) => [t.x, t.y])} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin="miter" miterLimit={6} />
-        {tutup}
-      </>
-    );
-  }
-
-  // gerak: oval dengan garis gerak di dua sudutnya
+  if (bentuk === "kotak") return <JalurBalon b={b} poligon={jalurKotak(b.w, b.h)} bayangan />;
+  if (bentuk === "ledakan") return <JalurBalon b={b} poligon={titikGerigi(b.w, b.h, 13, 0.62)} runcing />;
+  if (bentuk === "teriak") return <JalurBalon b={b} poligon={titikGerigi(b.w, b.h, 22, 0.8)} runcing />;
   return (
     <>
-      {segitiga && <Line points={tailPoints} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin="round" />}
-      <Ellipse x={cx} y={cy} radiusX={cx} radiusY={cy} fill="#fff" stroke="#111" strokeWidth={4} />
-      {tutup}
-      {garisGerak(b.w, b.h).map((g, i) => (
-        <Line key={i} points={g} stroke="#111" strokeWidth={4} lineCap="round" listening={false} />
-      ))}
+      <JalurBalon b={b} poligon={jalurOval(b.w, b.h)} />
+      {bentuk === "gerak" &&
+        garisGerak(b.w, b.h).map((g, i) => <Line key={i} points={g} stroke="#111" strokeWidth={4} lineCap="round" listening={false} />)}
     </>
   );
 }
@@ -291,23 +276,9 @@ export function BubbleShape({ b }: { b: Bubble }) {
   const cy = b.h / 2;
   const tail = b.tail;
 
-  // segitiga ekor: dua titik di tepi balon searah ujung ekor, ujungnya di titik ekor
-  let tailPoints: number[] | null = null;
-  if (tail && (b.kind === "bicara" || (b.bentuk && b.bentuk !== "awan"))) {
-    const len = Math.hypot(tail.dx, tail.dy) || 1;
-    const ux = tail.dx / len;
-    const uy = tail.dy / len;
-    const bx = cx + ux * cx * 0.75;
-    const by = cy + uy * cy * 0.75;
-    const px = -uy * 18;
-    const py = ux * 18;
-    tailPoints = [bx + px, by + py, cx + tail.dx, cy + tail.dy, bx - px, by - py];
-  }
-
   if (b.kind === "narasi") {
     return <Rect width={b.w} height={b.h} fill="#fff6c8" stroke="#111" strokeWidth={4} cornerRadius={4} />;
   }
-  if (b.bentuk && b.bentuk !== "oval") return <BalonBergaya b={b} tailPoints={tailPoints} />;
   if (b.kind === "pikir" && !b.bentuk) {
     return (
       <>
@@ -321,13 +292,7 @@ export function BubbleShape({ b }: { b: Bubble }) {
       </>
     );
   }
-  return (
-    <>
-      {tailPoints && <Line points={tailPoints} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin="round" />}
-      <Ellipse x={cx} y={cy} radiusX={cx} radiusY={cy} fill="#fff" stroke="#111" strokeWidth={4} />
-      {tailPoints && <Line points={tailPoints.slice(0, 2).concat(tailPoints.slice(4))} stroke="#fff" strokeWidth={6} listening={false} />}
-    </>
-  );
+  return <BalonBergaya b={b} />;
 }
 
 /** Bentuk balon beserta teksnya (tanpa pegangan seleksi). */

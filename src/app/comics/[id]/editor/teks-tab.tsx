@@ -1,7 +1,7 @@
 "use client";
 
 import { Trash2 } from "lucide-react";
-import { FONT_MAX, FONT_MIN, GAYA_TEKS, MAKS_TEKS, burstTeks, gayaTeks, lapisanTeks } from "@/lib/editor/gaya-teks";
+import { ADA_LANJUT, FONT_MAX, FONT_MIN, GAYA_TEKS, MAKS_TEKS, bawaanLanjut, burstTeks, gayaTeks, lapisanTeks } from "@/lib/editor/gaya-teks";
 import { useEditor } from "@/lib/editor/store";
 import type { ElemenStiker, ElemenTeks, MathElement } from "@/lib/editor/types";
 import { FONT_GAYA } from "./font-gaya";
@@ -100,7 +100,7 @@ export function TeksTab({ el }: { el: ElemenTeks }) {
               aria-pressed={el.gaya === g.id}
               aria-label={g.nama}
               title={g.nama}
-              onClick={() => update(el.id, { gaya: g.id, warna: undefined, latarBurst: undefined, ...(g.burst && el.h < el.w * 0.55 ? { h: Math.round(el.w * 0.75) } : {}) })}
+              onClick={() => update(el.id, { gaya: g.id, warna: undefined, latarBurst: undefined, tebalTepi: undefined, warnaTepi: undefined, bayanganJarak: undefined, bayanganTebal: undefined, warnaBayangan: undefined, ...(g.burst && el.h < el.w * 0.55 ? { h: Math.round(el.w * 0.75) } : {}) })}
               className={`rounded-lg border px-2 py-2 ${el.gaya === g.id ? "border-violet-600 ring-2 ring-violet-600/40" : "border-line hover:bg-surface-muted"}`}
               style={{ background: g.burst?.isi ?? "#e9edf2" }}
             >
@@ -126,6 +126,7 @@ export function TeksTab({ el }: { el: ElemenTeks }) {
           </button>
         )}
       </div>
+      <PengaturanLanjut el={el} />
       <label className="flex items-center gap-2">
         <input type="checkbox" checked={!!burstTeks(el)} onChange={(e) => update(el.id, { latarBurst: e.target.checked })} className="h-4 w-4 accent-violet-600" />
         <span className="font-semibold">Latar burst</span>
@@ -156,5 +157,52 @@ export function StikerTab({ el }: { el: ElemenStiker }) {
         <Trash2 size={14} /> Hapus stiker
       </button>
     </div>
+  );
+}
+
+/** Pengaturan lanjutan teks: tebal dan warna garis tepi, serta jarak, tebal, dan warna bayangan. Nilai kosong = bawaan gaya. */
+function PengaturanLanjut({ el }: { el: ElemenTeks }) {
+  const update = useEditor((s) => s.updateElement);
+  const b = bawaanLanjut(el.gaya);
+  const berubah = ADA_LANJUT.some((k) => el[k] !== undefined);
+  const tepi = Math.round((el.tebalTepi ?? b.tebalTepi) * 100);
+  const warna = "h-7 w-9 cursor-pointer rounded border border-line";
+  const geser = "mt-1 w-full accent-violet-600";
+
+  return (
+    <details className="group rounded-lg border border-line" open={berubah}>
+      <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-gray-700 group-open:border-b group-open:border-line">Lanjutan: garis tepi dan bayangan</summary>
+      <div className="space-y-3 p-3 text-xs">
+        <label className="block">
+          <span className="text-gray-600">Tebal garis tepi: {tepi}%</span>
+          <input type="range" min={0} max={300} step={5} value={tepi} onChange={(e) => update(el.id, { tebalTepi: Number(e.target.value) / 100 })} className={geser} />
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="color" value={el.warnaTepi ?? b.warnaTepi} onChange={(e) => update(el.id, { warnaTepi: e.target.value })} className={warna} />
+          <span className="text-gray-600">Warna garis tepi</span>
+        </label>
+        <label className="block">
+          <span className="text-gray-600">Jarak bayangan: {el.bayanganJarak ?? b.bayanganJarak}</span>
+          <input type="range" min={0} max={40} value={el.bayanganJarak ?? b.bayanganJarak} onChange={(e) => update(el.id, { bayanganJarak: Number(e.target.value) })} className={geser} />
+        </label>
+        <label className="block">
+          <span className="text-gray-600">Tebal bayangan: {el.bayanganTebal ?? b.bayanganTebal}</span>
+          <input type="range" min={0} max={60} value={el.bayanganTebal ?? b.bayanganTebal} onChange={(e) => update(el.id, { bayanganTebal: Number(e.target.value) })} className={geser} />
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="color" value={el.warnaBayangan ?? b.warnaBayangan} onChange={(e) => update(el.id, { warnaBayangan: e.target.value })} className={warna} />
+          <span className="text-gray-600">Warna bayangan</span>
+        </label>
+        {berubah && (
+          <button
+            type="button"
+            onClick={() => update(el.id, { tebalTepi: undefined, warnaTepi: undefined, bayanganJarak: undefined, bayanganTebal: undefined, warnaBayangan: undefined })}
+            className="w-full rounded-lg border border-line px-3 py-2 font-semibold hover:bg-surface-muted"
+          >
+            Kembalikan bawaan gaya
+          </button>
+        )}
+      </div>
+    </details>
   );
 }

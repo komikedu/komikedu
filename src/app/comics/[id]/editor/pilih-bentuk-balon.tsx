@@ -1,6 +1,8 @@
 "use client";
 
-import { BENTUK_BALON, garisGerak, lingkaranAwan, titikGerigi, ukuranBentuk } from "@/lib/editor/bentuk-balon";
+import { useEffect, useRef, useState } from "react";
+import { FlipHorizontal2 } from "lucide-react";
+import { BENTUK_BALON, LEBAR_EKOR_MAX, LEBAR_EKOR_MIN, PANJANG_EKOR_MAX, PANJANG_EKOR_MIN, aturanEkor, balikEkor, ekorDariAturan, garisGerak, lingkaranAwan, titikGerigi, ukuranBentuk } from "@/lib/editor/bentuk-balon";
 import { useEditor } from "@/lib/editor/store";
 import type { Bubble, BentukBalon } from "@/lib/editor/types";
 
@@ -92,6 +94,69 @@ export function PilihBentukBalon({ bubble }: { bubble: Bubble }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+const JEDA_MS = 300;
+
+/** Pengaturan ekor balon: nyalakan, balik kiri-kanan, arah, panjang, dan lebar pangkal. Geser slider disimpan sebagai satu langkah riwayat. */
+export function PengaturanEkor({ bubble }: { bubble: Bubble }) {
+  const update = useEditor((s) => s.updateBubble);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tail = bubble.tail;
+  const [draf, setDraf] = useState(() => (tail ? aturanEkor(bubble.w, bubble.h, tail) : null));
+
+  // ikuti perubahan dari luar (undo, seret ujung ekor di kanvas), kecuali saat guru sedang menggeser slider
+  useEffect(() => {
+    if (!timer.current) setDraf(tail ? aturanEkor(bubble.w, bubble.h, tail) : null);
+  }, [tail, bubble.w, bubble.h]);
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+
+  if (bubble.kind === "narasi") return null;
+
+  const ubah = (patch: Partial<{ arah: number; panjang: number; lebar: number }>) => {
+    if (!draf) return;
+    const baru = { ...draf, ...patch };
+    setDraf(baru);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      update(bubble.id, { tail: ekorDariAturan(bubble.w, bubble.h, baru.arah, baru.panjang, baru.lebar) });
+    }, JEDA_MS);
+  };
+  const geser = "mt-1 w-full accent-brand";
+
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center justify-between">
+        <span className="font-semibold">Ekor balon</span>
+        <input type="checkbox" checked={!!tail} onChange={(e) => update(bubble.id, { tail: e.target.checked ? { dx: 20, dy: bubble.h / 2 + 40 } : null })} />
+      </label>
+      {tail && draf && (
+        <div className="space-y-3 rounded-lg border border-line p-3 text-xs">
+          <button
+            type="button"
+            onClick={() => update(bubble.id, { tail: balikEkor(tail) })}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-2 font-semibold hover:bg-surface-muted"
+          >
+            <FlipHorizontal2 size={14} /> Balik ekor
+          </button>
+          <label className="block">
+            <span className="text-gray-600">Arah ekor: {draf.arah}°</span>
+            <input type="range" min={0} max={360} value={draf.arah} onChange={(e) => ubah({ arah: Number(e.target.value) })} className={geser} />
+          </label>
+          <label className="block">
+            <span className="text-gray-600">Panjang ekor: {draf.panjang}</span>
+            <input type="range" min={PANJANG_EKOR_MIN} max={PANJANG_EKOR_MAX} value={Math.min(PANJANG_EKOR_MAX, Math.max(PANJANG_EKOR_MIN, draf.panjang))} onChange={(e) => ubah({ panjang: Number(e.target.value) })} className={geser} />
+          </label>
+          <label className="block">
+            <span className="text-gray-600">Lebar pangkal ekor: {Math.round(draf.lebar)}</span>
+            <input type="range" min={LEBAR_EKOR_MIN} max={LEBAR_EKOR_MAX} value={Math.min(LEBAR_EKOR_MAX, Math.max(LEBAR_EKOR_MIN, draf.lebar))} onChange={(e) => ubah({ lebar: Number(e.target.value) })} className={geser} />
+          </label>
+          <p className="text-gray-500">Ujung ekor juga bisa diseret langsung di kanvas.</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,8 +1,11 @@
 /**
  * Hapus latar gambar di peramban dengan MODNet (matting potret, Apache-2.0, sekitar 26 MB, diunduh sekali lalu
  * disimpan peramban). Berjalan di WASM, tanpa server dan tanpa kredit. Paling cocok untuk satu tokoh; adegan ramai
- * dengan banyak benda bisa ikut terpotong.
+ * dengan banyak benda bisa ikut terpotong. Mask dirapikan (celah ditutup, lubang diisi, serpihan dibuang) karena
+ * MODNet sering bolong di bagian terang seperti baju putih.
  */
+import { rapikanMask } from "@/lib/editor/rapikan-mask";
+
 const MODEL = "Xenova/modnet";
 
 type Pemuat = Promise<{
@@ -48,7 +51,8 @@ export async function hapusLatar(url: string): Promise<File> {
   const ctx = kanvas.getContext("2d");
   if (!ctx) throw new Error("Kanvas tidak tersedia");
   const data = new ImageData(new Uint8ClampedArray(image.rgba().data), image.width, image.height);
-  for (let i = 0; i < mask.data.length; i++) data.data[i * 4 + 3] = mask.data[i];
+  const alpha = rapikanMask(mask.data, image.width, image.height);
+  for (let i = 0; i < alpha.length; i++) data.data[i * 4 + 3] = alpha[i];
   ctx.putImageData(data, 0, 0);
   const blob = await new Promise<Blob | null>((ok) => kanvas.toBlob(ok, "image/png"));
   if (!blob) throw new Error("Gagal membuat gambar");

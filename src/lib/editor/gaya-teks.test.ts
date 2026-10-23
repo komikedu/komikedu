@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createPage, createTeks } from "./factory";
-import { BURST_BAWAAN, GAYA_TEKS, burstTeks, gayaTeks, lapisanTeks, titikBurst } from "./gaya-teks";
+import { BURST_BAWAAN, GAYA_TEKS, bawaanLanjut, burstTeks, gayaTeks, lapisanLanjut, lapisanTeks, titikBurst } from "./gaya-teks";
 import { deletePanel, duplicatePanel, splitPanel } from "./panel-ops";
 import { EditorPayloadSchema, fromNested, toRows, type NestedPage } from "./persist";
 import { clearHistory, useEditor } from "./store";
@@ -176,5 +176,53 @@ describe("burst", () => {
   });
   it("ada 12 gaya", () => {
     expect(GAYA_TEKS).toHaveLength(12);
+  });
+});
+
+describe("pengaturan lanjutan teks", () => {
+  const el = (patch: object = {}) => ({ gaya: "sfx-ledak", fontSize: 110, ...patch }) as Parameters<typeof lapisanLanjut>[0];
+
+  it("tanpa pengaturan: lapisan gaya, diskalakan mengikuti ukuran huruf", () => {
+    const normal = lapisanLanjut(el());
+    const kecil = lapisanLanjut(el({ fontSize: 55 }));
+    expect(normal).toHaveLength(gayaTeks("sfx-ledak").lapisan.length);
+    expect(kecil[0].strokeWidth).toBeCloseTo(normal[0].strokeWidth! / 2);
+  });
+  it("tebal garis tepi mengalikan semua garis tepi kecuali isi huruf", () => {
+    const dasar = lapisanLanjut(el());
+    const tebal = lapisanLanjut(el({ tebalTepi: 2 }));
+    expect(tebal[0].strokeWidth).toBeCloseTo(dasar[0].strokeWidth! * 2);
+    expect(tebal.at(-1)!.strokeWidth).toBeCloseTo(dasar.at(-1)!.strokeWidth!);
+    expect(lapisanLanjut(el({ tebalTepi: 0 }))[0].strokeWidth).toBe(0);
+  });
+  it("warna garis tepi hanya mengganti garis terluar", () => {
+    const lap = lapisanLanjut(el({ warnaTepi: "#00ff00" }));
+    expect(lap[0]).toMatchObject({ fill: "#00ff00", stroke: "#00ff00" });
+    expect(lap[1].fill).toBe("#ffffff");
+  });
+  it("bayangan ditambahkan di belakang gaya yang tidak punya bayangan", () => {
+    const lap = lapisanLanjut(el({ bayanganJarak: 10, bayanganTebal: 20, warnaBayangan: "#222222" }));
+    expect(lap).toHaveLength(gayaTeks("sfx-ledak").lapisan.length + 1);
+    expect(lap[0]).toMatchObject({ fill: "#222222", stroke: "#222222", dx: 11, strokeWidth: 22 });
+    expect(lap[0].dy).toBeCloseTo(11 * 1.25);
+  });
+  it("jarak bayangan 0 menghapus bayangan bawaan gaya", () => {
+    const punya = lapisanLanjut({ gaya: "judul-kuning", fontSize: 110 });
+    expect(punya.some((l) => l.dx)).toBe(true);
+    const tanpa = lapisanLanjut({ gaya: "judul-kuning", fontSize: 110, bayanganJarak: 0 });
+    expect(tanpa.some((l) => l.dx)).toBe(false);
+    expect(tanpa).toHaveLength(punya.length - 1);
+  });
+  it("nilai bawaan lanjutan dibaca dari gaya", () => {
+    expect(bawaanLanjut("sfx-ledak")).toMatchObject({ tebalTepi: 1, bayanganJarak: 0, warnaTepi: "#111111" });
+    expect(bawaanLanjut("judul-kuning").bayanganJarak).toBeGreaterThan(0);
+  });
+  it("lolos validasi dan menolak nilai di luar batas", () => {
+    const p = createPage("1-penuh");
+    const base = createTeks(null, 450, 300);
+    const ok = { ...base, tebalTepi: 1.5, warnaTepi: "#112233", bayanganJarak: 12, bayanganTebal: 30, warnaBayangan: "#000000" };
+    expect(EditorPayloadSchema.safeParse(JSON.parse(JSON.stringify([{ ...p, elements: [ok] }]))).success).toBe(true);
+    expect(EditorPayloadSchema.safeParse([{ ...p, elements: [{ ...ok, tebalTepi: 9 }] }]).success).toBe(false);
+    expect(EditorPayloadSchema.safeParse([{ ...p, elements: [{ ...ok, warnaBayangan: "hitam" }] }]).success).toBe(false);
   });
 });

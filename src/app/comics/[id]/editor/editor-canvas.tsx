@@ -10,6 +10,7 @@ import { snapPoint, snapRectMove, snapTargets, type Guides, type SnapTargets } f
 import { IkonBendaView } from "./ikon-benda";
 import { useVersiGambar } from "./use-versi-gambar";
 import { FONT_MAX, FONT_MIN } from "@/lib/editor/gaya-teks";
+import { useStatusPanel } from "@/lib/editor/status-panel";
 import { muatFontGaya } from "./font-gaya";
 import { GambarPanel, IsiBalon, IsiElemen, LatarPanel, TepiPanel, klipPanel, titikLokal } from "./bentuk-halaman";
 import { useEditor } from "@/lib/editor/store";
@@ -170,8 +171,53 @@ function PanelView({
           />
         </>
       )}
+      <StatusPanelView panel={panel} memuat={!!panel.imageUrl && !img} />
       <TepiPanel panel={panel} lokal={lokal} />
     </Group>
+  );
+}
+
+/**
+ * Keterangan proses di atas panel: tahap unggah gambar dengan bar kemajuan, atau "Memuat gambar..." saat gambar
+ * panel sudah ada tetapi masih diunduh. Bar tanpa persen bergerak bolak-balik karena lamanya tidak diketahui.
+ */
+function StatusPanelView({ panel, memuat }: { panel: Panel; memuat: boolean }) {
+  const status = useStatusPanel((s) => s.perPanel[panel.id]);
+  // gambar yang tidak kunjung selesai diunduh (mis. alamatnya rusak) tidak boleh menampilkan "Memuat..." selamanya
+  const [menyerah, setMenyerah] = useState(false);
+  useEffect(() => {
+    setMenyerah(false);
+    if (!memuat) return;
+    const t = setTimeout(() => setMenyerah(true), 30_000);
+    return () => clearTimeout(t);
+  }, [memuat, panel.imageUrl]);
+  const aktif = status ?? (memuat && !menyerah ? { teks: "Memuat gambar...", persen: null } : null);
+  const [tik, setTik] = useState(0);
+  const bergerak = !!aktif && aktif.persen === null;
+  useEffect(() => {
+    if (!bergerak) return;
+    const t = setInterval(() => setTik((n) => n + 1), 50);
+    return () => clearInterval(t);
+  }, [bergerak]);
+  if (!aktif) return null;
+
+  const lebarBar = Math.min(panel.w * 0.7, 360);
+  const x = (panel.w - lebarBar) / 2;
+  const y = panel.h / 2 + 22;
+  const segmen = lebarBar * 0.35;
+  const posisi = ((tik * 4) % (2 * (lebarBar - segmen))) ;
+  const geser = posisi <= lebarBar - segmen ? posisi : 2 * (lebarBar - segmen) - posisi;
+  return (
+    <>
+      <Rect width={panel.w} height={panel.h} fill="#ffffff" opacity={0.82} listening={false} />
+      <Text x={0} y={panel.h / 2 - 40} width={panel.w} align="center" fontSize={24} fontStyle="bold" fill="#0f766e" text={aktif.persen !== null ? `${aktif.teks} ${aktif.persen}%` : aktif.teks} listening={false} />
+      <Rect x={x} y={y} width={lebarBar} height={12} cornerRadius={6} fill="#cfe7e3" listening={false} />
+      {aktif.persen !== null ? (
+        <Rect x={x} y={y} width={Math.max(12, (lebarBar * aktif.persen) / 100)} height={12} cornerRadius={6} fill="#0f766e" listening={false} />
+      ) : (
+        <Rect x={x + geser} y={y} width={segmen} height={12} cornerRadius={6} fill="#0f766e" listening={false} />
+      )}
+    </>
   );
 }
 
@@ -459,7 +505,7 @@ function BubbleView({
           }}
           onDragEnd={(e) => {
             e.cancelBubble = true;
-            update(b.id, { tail: { dx: Math.round(e.target.x() - b.w / 2), dy: Math.round(e.target.y() - b.h / 2) } });
+            update(b.id, { tail: { ...b.tail, dx: Math.round(e.target.x() - b.w / 2), dy: Math.round(e.target.y() - b.h / 2) } });
           }}
         />
       )}

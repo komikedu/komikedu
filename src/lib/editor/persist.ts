@@ -81,6 +81,11 @@ const ElementSchema = z.discriminatedUnion("kind", [
     fontSize: z.number().int().min(FONT_MIN).max(FONT_MAX),
     warna: WARNA.optional(),
     latarBurst: z.boolean().optional(),
+    tebalTepi: z.number().finite().min(0).max(4).optional(),
+    warnaTepi: WARNA.optional(),
+    bayanganJarak: z.number().finite().min(0).max(60).optional(),
+    bayanganTebal: z.number().finite().min(0).max(80).optional(),
+    warnaBayangan: WARNA.optional(),
   }),
   z.object({
     ...elemenDasar,
@@ -99,7 +104,7 @@ const BubbleSchema = z.object({
   y: coord(PAGE_H),
   w: z.number().finite().min(20).max(PAGE_W * 2),
   h: z.number().finite().min(20).max(PAGE_H * 2),
-  tail: z.object({ dx: z.number().finite(), dy: z.number().finite() }).nullable(),
+  tail: z.object({ dx: z.number().finite(), dy: z.number().finite(), lebar: z.number().finite().min(8).max(300).optional() }).nullable(),
   fontSize: z.number().int().min(8).max(96),
   visible: z.boolean(),
 });
@@ -155,7 +160,7 @@ export type EditorRows = {
     teks: string;
     posisi: { x: number; y: number };
     ukuran: { w: number; h: number; bentuk?: BentukBalon };
-    ekor: { dx: number; dy: number } | null;
+    ekor: { dx: number; dy: number; lebar?: number } | null;
     font_size: number;
     tampil: boolean;
     urutan: number;
@@ -241,7 +246,7 @@ export type NestedPage = {
       teks: string;
       posisi: { x: number; y: number } | null;
       ukuran: { w: number; h: number; bentuk?: string } | null;
-      ekor: { dx: number; dy: number } | null;
+      ekor: { dx: number; dy: number; lebar?: number } | null;
       font_size: number;
       tampil: boolean;
       urutan: number;

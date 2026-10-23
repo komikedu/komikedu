@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Apple,
+  Check,
   ChevronDown,
   Copy,
   Download,
@@ -17,6 +18,7 @@ import {
   MousePointer2,
   Plus,
   Redo2,
+  Save,
   Scissors,
   Sparkles,
   Sticker,
@@ -35,6 +37,8 @@ import { MAX_PANELS_PER_PAGE } from "@/lib/editor/panel-ops";
 import { MAX_PAGES } from "@/lib/editor/persist";
 import { jumlahBendaDiAdegan } from "@/lib/ai/jumlah";
 import { IKON_BENDA, MAX_JUMLAH, MAX_KOLOM, namaIkon } from "@/lib/editor/math-elements";
+import { useStatusPanel } from "@/lib/editor/status-panel";
+import { bacaHalamanAktif, simpanHalamanAktif } from "@/lib/editor/halaman-aktif";
 import { applyPanelImages, clearHistory, redo, selectSelectedBubble, selectSelectedElement, selectSelectedPanel, undo, useEditor } from "@/lib/editor/store";
 import type { BubbleKind, EditorPage, MathElement, Panel as EditorPanel } from "@/lib/editor/types";
 import { GAYA } from "@/lib/comics/schema";
@@ -42,11 +46,12 @@ import { alamatPotret, buatPromptFlow, rasioTerdekat, tokohDiTeks } from "@/lib/
 import type { Tokoh } from "@/lib/comics/tokoh";
 import { AdeganInput, NamaTokohContext } from "./adegan-input";
 import { LatarSection } from "./latar-section";
-import { PilihBentukBalon } from "./pilih-bentuk-balon";
+import { PengaturanEkor, PilihBentukBalon } from "./pilih-bentuk-balon";
 import { IkatPanel, Putaran, StikerTab, TeksTab } from "./teks-tab";
 import { DialogTokohNaskah } from "./dialog-tokoh-naskah";
 import { hapusLatar, siapkanHapusLatar } from "./hapus-latar";
 import { kecilkanGambar } from "./kecilkan-gambar";
+import { kirimDenganProgres } from "./kirim-progres";
 import { TokohTab } from "./tokoh-tab";
 import { TombolTerbit } from "./tombol-terbit";
 import { namaBerkasAcuan, unduhPotret } from "./unduh-potret";
@@ -536,12 +541,14 @@ function HapusLatarSection({ panelId, imageUrl, ai }: { panelId: string; imageUr
   async function mulai() {
     setError(null);
     setTahap("proses");
+    useStatusPanel.getState().atur(panelId, { teks: "Menghapus latar (pertama kali mengunduh model ±26 MB)...", persen: null });
     try {
       const file = await hapusLatar(imageUrl);
       setError(await ai.onUnggah(panelId, file, "tanpa-latar"));
     } catch {
       setError("Gagal menghapus latar. Periksa koneksi lalu coba lagi.");
     } finally {
+      useStatusPanel.getState().hapus(panelId);
       setTahap("diam");
     }
   }
@@ -638,10 +645,10 @@ function PageTab({ page, gen }: { page: EditorPage; gen: GenerateProps }) {
       <div>
         <h3 className="font-semibold">Naskah halaman</h3>
         <p className="mt-1 text-xs text-gray-500">Gambar dibuat dari adegan ini. Ketik @ untuk menyebut tokoh agar wajahnya sesuai.</p>
-        <ol className="mt-2 space-y-2">
+        <ol className="mt-3 space-y-3">
           {page.panels.map((p, i) => (
-            <li key={p.id} className="rounded border border-line p-2">
-              <p className="text-xs font-semibold">Panel {i + 1}</p>
+            <li key={p.id} className="group">
+              <p className="px-2 text-[11px] font-medium text-gray-400 transition-colors group-focus-within:text-brand group-hover:text-gray-600">Panel {i + 1}</p>
               <AdeganInput
                 label={`Adegan panel ${i + 1}`}
                 value={p.adegan}
@@ -929,16 +936,7 @@ function LayerTab({ ai }: { ai: EditAiProps }) {
         />
       </div>
 
-      {bubble.kind !== "narasi" && (
-        <label className="flex items-center justify-between">
-          <span className="font-semibold">Ekor balon</span>
-          <input
-            type="checkbox"
-            checked={!!bubble.tail}
-            onChange={(e) => update(bubble.id, { tail: e.target.checked ? { dx: 20, dy: bubble.h / 2 + 40 } : null })}
-          />
-        </label>
-      )}
+      <PengaturanEkor key={bubble.id} bubble={bubble} />
 
       <button type="button" onClick={() => del(bubble.id)} className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-danger hover:bg-surface-muted">
         <Trash2 size={14} /> Hapus balon
@@ -948,7 +946,7 @@ function LayerTab({ ai }: { ai: EditAiProps }) {
 }
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
-const AUTOSAVE_MS = 800;
+const AUTOSAVE_MS = 2500; // jeda lebih panjang = lebih sedikit simpanan ke server saat mengedit terus-menerus
 const KEEPALIVE_LIMIT = 60_000; // batas body fetch keepalive di browser adalah 64 KB
 
 /** Kirim isi editor ke API. keepalive membuat permintaan tetap terkirim setelah halaman ditinggalkan. */
@@ -1180,14 +1178,21 @@ export function EditorShell({
   async function unggahPanel(panelId: string, file: File, sumber?: "tanpa-latar"): Promise<string | null> {
     if (!comicId) return "Komik belum tersimpan";
     setEditingPanel(panelId);
+    const { atur, hapus } = useStatusPanel.getState();
     try {
+      atur(panelId, { teks: "Menyimpan perubahan...", persen: null });
       if (!(await save.simpanSekarang())) return "Gagal menyimpan perubahan editor. Coba lagi.";
+      atur(panelId, { teks: "Menyiapkan gambar...", persen: null });
       const form = new FormData();
       form.set("file", await kecilkanGambar(file));
       if (sumber) form.set("sumber", sumber);
-      const res = await fetch(`/api/comics/${comicId}/panels/${panelId}/gambar`, { method: "PUT", body: form });
-      const json = (await res.json().catch(() => null)) as { ok: true; imageUrl: string } | { ok: false; error: string } | null;
-      if (res.ok && json?.ok) {
+      atur(panelId, { teks: "Mengunggah gambar", persen: 0 });
+      const { status, json: mentah } = await kirimDenganProgres(`/api/comics/${comicId}/panels/${panelId}/gambar`, form, (bagian) =>
+        atur(panelId, bagian >= 1 ? { teks: "Memproses di server...", persen: null } : { teks: "Mengunggah gambar", persen: Math.round(bagian * 100) }),
+      );
+      const json = mentah as { ok: true; imageUrl: string } | { ok: false; error: string } | null;
+      if (status >= 200 && status < 300 && json?.ok) {
+        // gambar baru masih diunduh kanvas: panel menampilkan "Memuat gambar..." sampai selesai
         applyPanelImages({ [panelId]: json.imageUrl });
         return null;
       }
@@ -1195,6 +1200,7 @@ export function EditorShell({
     } catch {
       return "Tidak ada koneksi. Coba lagi.";
     } finally {
+      hapus(panelId);
       setEditingPanel(null);
     }
   }
@@ -1281,9 +1287,17 @@ export function EditorShell({
 
   useEffect(() => {
     init(initialPages);
+    // refresh kembali ke halaman yang terakhir dibuka, bukan halaman 1
+    const terakhir = comicId ? bacaHalamanAktif(comicId, initialPages.map((p) => p.id)) : null;
+    if (terakhir) useEditor.getState().setActivePage(terakhir);
     clearHistory();
     setReady(true);
-  }, [init, initialPages]);
+  }, [init, initialPages, comicId]);
+
+  const halamanAktif = useEditor((s) => s.activePageId);
+  useEffect(() => {
+    if (ready && comicId && halamanAktif) simpanHalamanAktif(comicId, halamanAktif);
+  }, [ready, comicId, halamanAktif]);
 
   // seperti Anifusion: tab Layer muncul saat ada yang dipilih
   useEffect(() => {
@@ -1393,6 +1407,21 @@ export function EditorShell({
         )}
 
         <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1 rounded-xl bg-surface p-1.5 text-xs shadow-lg">
+          {comicId && (
+            <>
+              <button
+                type="button"
+                aria-label="Simpan sekarang"
+                title={save.state === "saving" ? "Menyimpan..." : save.state === "saved" ? "Tersimpan" : save.state === "error" ? "Gagal menyimpan, klik untuk coba lagi" : "Simpan sekarang"}
+                disabled={save.state === "saving"}
+                onClick={() => void save.simpanSekarang()}
+                className={`rounded p-1.5 hover:bg-surface-muted ${save.state === "error" ? "text-danger" : ""}`}
+              >
+                {save.state === "saving" ? <Loader2 size={16} className="animate-spin" /> : save.state === "saved" ? <Check size={16} /> : <Save size={16} />}
+              </button>
+              <span className="mx-0.5 h-5 w-px bg-line" aria-hidden />
+            </>
+          )}
           <button type="button" aria-label="Perkecil" onClick={() => setZoom(zoom - 0.1)} className="rounded p-1.5 hover:bg-surface-muted">
             <ZoomOut size={16} />
           </button>

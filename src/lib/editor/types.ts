@@ -17,8 +17,8 @@ export type Bubble = {
   y: number;
   w: number;
   h: number;
-  /** Ujung ekor relatif terhadap pusat balon. null = tanpa ekor. */
-  tail: { dx: number; dy: number } | null;
+  /** Ujung ekor relatif terhadap pusat balon, dan `lebar` pangkalnya sepanjang tepi balon (kosong = bawaan). null = tanpa ekor. */
+  tail: { dx: number; dy: number; lebar?: number } | null;
   fontSize: number;
   visible: boolean;
 };
@@ -102,6 +102,16 @@ export type ElemenTeks = ElemenDasar & {
   warna?: string;
   /** Latar burst di belakang teks; kosong = ikut bawaan gaya. */
   latarBurst?: boolean;
+  /** Pengaturan lanjutan; kosong = bawaan gaya. Ukuran dalam satuan "per huruf 100", jadi ikut membesar dan mengecil bersama huruf. */
+  /** Pengali tebal garis tepi (1 = bawaan gaya). */
+  tebalTepi?: number;
+  /** Warna garis tepi terluar. */
+  warnaTepi?: string;
+  /** Jarak bayangan keras ke kanan-bawah; 0 = tanpa bayangan. */
+  bayanganJarak?: number;
+  /** Tebal bayangan (seberapa melebar dari huruf). */
+  bayanganTebal?: number;
+  warnaBayangan?: string;
 };
 
 /** Gambar karakter (atau benda) bebas, mis. hasil hapus latar. `url` harus gambar milik komik ini; digambar muat utuh di kotaknya. */

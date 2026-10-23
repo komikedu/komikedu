@@ -17,11 +17,14 @@ import {
   MousePointer2,
   Plus,
   Redo2,
+  Scissors,
   Sparkles,
+  Sticker,
   Trash2,
   Type,
   Undo2,
   Upload,
+  Zap,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -33,12 +36,16 @@ import { MAX_PAGES } from "@/lib/editor/persist";
 import { jumlahBendaDiAdegan } from "@/lib/ai/jumlah";
 import { IKON_BENDA, MAX_JUMLAH, MAX_KOLOM, namaIkon } from "@/lib/editor/math-elements";
 import { applyPanelImages, clearHistory, redo, selectSelectedBubble, selectSelectedElement, selectSelectedPanel, undo, useEditor } from "@/lib/editor/store";
-import type { BubbleKind, EditorPage, Panel as EditorPanel } from "@/lib/editor/types";
+import type { BubbleKind, EditorPage, MathElement, Panel as EditorPanel } from "@/lib/editor/types";
 import { GAYA } from "@/lib/comics/schema";
 import { alamatPotret, buatPromptFlow, rasioTerdekat, tokohDiTeks } from "@/lib/comics/prompt-flow";
 import type { Tokoh } from "@/lib/comics/tokoh";
 import { AdeganInput, NamaTokohContext } from "./adegan-input";
+import { LatarSection } from "./latar-section";
+import { PilihBentukBalon } from "./pilih-bentuk-balon";
+import { IkatPanel, Putaran, StikerTab, TeksTab } from "./teks-tab";
 import { DialogTokohNaskah } from "./dialog-tokoh-naskah";
+import { hapusLatar, siapkanHapusLatar } from "./hapus-latar";
 import { kecilkanGambar } from "./kecilkan-gambar";
 import { TokohTab } from "./tokoh-tab";
 import { TombolTerbit } from "./tombol-terbit";
@@ -74,7 +81,7 @@ function ToolButton({ label, active, disabled, onClick, children }: { label: str
 /** Halaman editor sebagai data thumbnail: panel dengan gambarnya di posisi aslinya. */
 function thumbHalaman(page: EditorPage): HalamanThumb {
   return {
-    panels: page.panels.filter((p) => p.visible).map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h, corners: p.corners ?? undefined, gambar: p.imageRect ?? undefined, imageUrl: p.imageUrl })),
+    panels: page.panels.filter((p) => p.visible).map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h, corners: p.corners ?? undefined, gambar: p.imageRect ?? undefined, latar: p.latar ?? undefined, imageUrl: p.imageUrl })),
   };
 }
 
@@ -280,21 +287,7 @@ function LayersPanel() {
               {page.elements
                 .filter((e) => e.panelId === panel.id)
                 .map((e) => (
-                  <li key={e.id}>
-                    <div className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs ${e.id === selectedId ? "bg-violet-600 text-white" : "hover:bg-surface-muted"}`}>
-                      <button
-                        type="button"
-                        aria-label={e.visible ? "Sembunyikan elemen" : "Tampilkan elemen"}
-                        onClick={() => updateElement(e.id, { visible: !e.visible })}
-                      >
-                        {e.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-                      </button>
-                      <button type="button" onClick={() => select(e.id)} className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left">
-                        <Apple size={13} className="shrink-0" />
-                        {e.jumlah} {namaIkon(e.ikon)}
-                      </button>
-                    </div>
-                  </li>
+                  <BarisElemen key={e.id} e={e} aktif={e.id === selectedId} onPilih={() => select(e.id)} onTampil={() => updateElement(e.id, { visible: !e.visible })} />
                 ))}
               <li>
                 {panel.imageUrl ? (
@@ -318,7 +311,36 @@ function LayersPanel() {
           </li>
         ))}
       </ul>
+      {page.elements.some((e) => e.panelId === null) && (
+        <div className="mt-2">
+          <p className="px-1 py-1 text-sm font-medium">Di luar panel</p>
+          <ul className="ml-4 space-y-1">
+            {page.elements
+              .filter((e) => e.panelId === null)
+              .map((e) => (
+                <BarisElemen key={e.id} e={e} aktif={e.id === selectedId} onPilih={() => select(e.id)} onTampil={() => updateElement(e.id, { visible: !e.visible })} />
+              ))}
+          </ul>
+        </div>
+      )}
     </section>
+  );
+}
+
+/** Satu baris elemen (teks bergaya atau kumpulan benda) di daftar layer. */
+function BarisElemen({ e, aktif, onPilih, onTampil }: { e: MathElement; aktif: boolean; onPilih: () => void; onTampil: () => void }) {
+  return (
+    <li>
+      <div className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs ${aktif ? "bg-violet-600 text-white" : "hover:bg-surface-muted"}`}>
+        <button type="button" aria-label={e.visible ? "Sembunyikan elemen" : "Tampilkan elemen"} onClick={onTampil}>
+          {e.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+        </button>
+        <button type="button" onClick={onPilih} className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left">
+          {e.kind === "teks" ? <Zap size={13} className="shrink-0" /> : e.kind === "stiker" ? <Sticker size={13} className="shrink-0" /> : <Apple size={13} className="shrink-0" />}
+          {e.kind === "teks" ? e.text || "(kosong)" : e.kind === "stiker" ? "Stiker" : `${e.jumlah} ${namaIkon(e.ikon)}`}
+        </button>
+      </div>
+    </li>
   );
 }
 
@@ -344,7 +366,7 @@ type EditAiProps = {
   /** kembalikan pesan galat, atau null bila berhasil */
   onEdit: (panelId: string, instruksi: string) => Promise<string | null>;
   /** unggah gambar sendiri ke panel (gratis); kembalikan pesan galat, atau null bila berhasil */
-  onUnggah: (panelId: string, file: File) => Promise<string | null>;
+  onUnggah: (panelId: string, file: File, sumber?: "tanpa-latar") => Promise<string | null>;
   comicId?: string;
   tokoh: Tokoh[];
   gaya: string | null;
@@ -466,6 +488,80 @@ function UnggahGambarSection({ panelId, ada, ai }: { panelId: string; ada: boole
           e.target.value = "";
         }}
       />
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Salin gambar panel menjadi stiker bebas di halaman (terbaik setelah latarnya dihapus). */
+function StikerSection({ imageUrl }: { imageUrl: string }) {
+  const addStiker = useEditor((s) => s.addStiker);
+  const [error, setError] = useState<string | null>(null);
+
+  function jadikan() {
+    setError(null);
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => addStiker(imageUrl, img.width / img.height);
+    img.onerror = () => setError("Gambar tidak bisa dimuat. Coba lagi.");
+    img.src = imageUrl;
+  }
+
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <p className="font-semibold">Jadikan stiker</p>
+      <p className="mt-1 text-xs text-gray-500">Taruh gambar ini di halaman sebagai stiker bebas yang bisa digeser, diperbesar, dan diputar. Paling bagus setelah latarnya dihapus.</p>
+      <button type="button" onClick={jadikan} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs font-semibold hover:bg-surface-muted">
+        <Sticker size={14} /> Jadikan stiker
+      </button>
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Hapus latar gambar panel (karakter saja) di peramban; hasilnya jadi versi baru di riwayat. Gratis, tanpa kredit. */
+function HapusLatarSection({ panelId, imageUrl, ai }: { panelId: string; imageUrl: string; ai: EditAiProps }) {
+  const [tahap, setTahap] = useState<"diam" | "proses">("diam");
+  const [error, setError] = useState<string | null>(null);
+  const jalan = tahap === "proses";
+
+  async function mulai() {
+    setError(null);
+    setTahap("proses");
+    try {
+      const file = await hapusLatar(imageUrl);
+      setError(await ai.onUnggah(panelId, file, "tanpa-latar"));
+    } catch {
+      setError("Gagal menghapus latar. Periksa koneksi lalu coba lagi.");
+    } finally {
+      setTahap("diam");
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <p className="font-semibold">Hapus latar</p>
+      <p className="mt-1 text-xs text-gray-500">
+        Sisakan karakternya saja, lalu pilih pola latar di atas. Gratis, diproses di perangkat Anda. Paling cocok untuk satu tokoh; pemakaian pertama mengunduh model ±26 MB.
+      </p>
+      <button
+        type="button"
+        disabled={!ai.tersimpan || !!ai.sibuk || jalan}
+        onMouseEnter={siapkanHapusLatar}
+        onFocus={siapkanHapusLatar}
+        onClick={() => void mulai()}
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs font-semibold hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {jalan ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />} {jalan ? "Menghapus latar..." : "Hapus latar"}
+      </button>
       {error && (
         <p role="alert" className="mt-2 text-xs text-red-700">
           {error}
@@ -623,7 +719,7 @@ function RiwayatGambar({ riwayat }: { riwayat: ReturnType<typeof useVersiGambar>
               disabled={sibuk}
               aria-pressed={i === index}
               aria-label={`Versi ${i + 1}${i === index ? ", sedang dipakai" : ""}`}
-              title={v.sumber === "edit" ? "Hasil edit AI" : v.sumber === "salinan" ? "Salinan dari panel lain" : v.sumber === "unggah" ? "Gambar unggahan sendiri" : "Hasil buat gambar halaman"}
+              title={v.sumber === "edit" ? "Hasil edit AI" : v.sumber === "salinan" ? "Salinan dari panel lain" : v.sumber === "unggah" ? "Gambar unggahan sendiri" : v.sumber === "tanpa-latar" ? "Latar dihapus (karakter saja)" : "Hasil buat gambar halaman"}
               onClick={() => void pasang(v)}
               className={`relative block aspect-[3/4] w-full overflow-hidden rounded-md bg-surface-muted ${i === index ? "ring-2 ring-brand" : "hover:ring-2 hover:ring-line"}`}
             >
@@ -668,8 +764,11 @@ function PanelTab({ ai }: { ai: EditAiProps }) {
         <p className="text-xs font-medium text-gray-600">Adegan (dipakai untuk membuat gambar)</p>
         <AdeganInput label="Adegan panel" rows={4} value={panel.adegan} onChange={(v) => updatePanel(panel.id, { adegan: v })} className="mt-1" />
       </div>
+      <LatarSection key={`latar-${panel.id}`} panelId={panel.id} latar={panel.latar} />
       <FlowSection key={`flow-${panel.id}`} panel={panel} ai={ai} />
       <UnggahGambarSection key={`unggah-${panel.id}`} panelId={panel.id} ada={!!panel.imageUrl} ai={ai} />
+      {panel.imageUrl && <StikerSection key={`stiker-${panel.id}`} imageUrl={panel.imageUrl} />}
+      {panel.imageUrl && <HapusLatarSection key={`hapus-${panel.id}`} panelId={panel.id} imageUrl={panel.imageUrl} ai={ai} />}
       {panel.imageUrl && <EditAiSection key={panel.id} panelId={panel.id} ai={ai} />}
       {panel.imageUrl && riwayat.versi.length > 0 && <RiwayatGambar riwayat={riwayat} />}
       <div className="grid grid-cols-2 gap-2">
@@ -695,6 +794,8 @@ function ElementTab() {
   const update = useEditor((s) => s.updateElement);
   const del = useEditor((s) => s.deleteElement);
   if (!el) return null;
+  if (el.kind === "teks") return <TeksTab el={el} />;
+  if (el.kind === "stiker") return <StikerTab el={el} />;
   const angka = (v: string, max: number) => Math.max(1, Math.min(max, Math.floor(Number(v) || 1)));
 
   return (
@@ -756,6 +857,8 @@ function ElementTab() {
         />
         <p className="mt-1 text-xs text-gray-500">Mis. 10 benda, 5 per baris = 2 baris. Cocok untuk perkalian dan pengelompokan.</p>
       </div>
+      <Putaran el={el} />
+      <IkatPanel el={el} />
       <button type="button" onClick={() => del(el.id)} className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-danger hover:bg-surface-muted">
         <Trash2 size={14} /> Hapus elemen
       </button>
@@ -786,6 +889,7 @@ function LayerTab({ ai }: { ai: EditAiProps }) {
               onClick={() =>
                 update(bubble.id, {
                   kind: k,
+                  bentuk: undefined,
                   tail: k === "narasi" ? null : (bubble.tail ?? { dx: 20, dy: bubble.h / 2 + 40 }),
                 })
               }
@@ -796,6 +900,8 @@ function LayerTab({ ai }: { ai: EditAiProps }) {
           ))}
         </div>
       </div>
+
+      <PilihBentukBalon bubble={bubble} />
 
       <div>
         <label htmlFor="teks-balon" className="font-semibold">Teks</label>
@@ -1071,13 +1177,14 @@ export function EditorShell({
     }
   }
 
-  async function unggahPanel(panelId: string, file: File): Promise<string | null> {
+  async function unggahPanel(panelId: string, file: File, sumber?: "tanpa-latar"): Promise<string | null> {
     if (!comicId) return "Komik belum tersimpan";
     setEditingPanel(panelId);
     try {
       if (!(await save.simpanSekarang())) return "Gagal menyimpan perubahan editor. Coba lagi.";
       const form = new FormData();
       form.set("file", await kecilkanGambar(file));
+      if (sumber) form.set("sumber", sumber);
       const res = await fetch(`/api/comics/${comicId}/panels/${panelId}/gambar`, { method: "PUT", body: form });
       const json = (await res.json().catch(() => null)) as { ok: true; imageUrl: string } | { ok: false; error: string } | null;
       if (res.ok && json?.ok) {
@@ -1139,6 +1246,19 @@ export function EditorShell({
       setGeneratingPage(null);
     }
   }
+
+  // berkas gambar yang terlepas di luar kanvas (mis. di sidebar) tidak boleh membuat browser membukanya dan meninggalkan editor
+  useEffect(() => {
+    const cegah = (e: DragEvent) => {
+      if (e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files")) e.preventDefault();
+    };
+    window.addEventListener("dragover", cegah);
+    window.addEventListener("drop", cegah);
+    return () => {
+      window.removeEventListener("dragover", cegah);
+      window.removeEventListener("drop", cegah);
+    };
+  }, []);
 
   // Ctrl/Cmd + scroll (dan cubit trackpad) di area kanvas memperbesar kanvas, bukan seluruh halaman browser.
   // Dipasang di window dengan passive: false karena React mendaftarkan onWheel sebagai pasif.
@@ -1243,7 +1363,7 @@ export function EditorShell({
         <Link href="/dashboard" className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-surface px-4 py-1.5 text-sm shadow">
           <Home size={14} /> Dashboard
         </Link>
-        <EditorCanvas fontFamily={fontFamily} generating={generatingPage === page.id} comicId={comicId} />
+        <EditorCanvas fontFamily={fontFamily} generating={generatingPage === page.id} comicId={comicId} onLepasGambar={comicId ? unggahPanel : undefined} />
 
         <div role="toolbar" aria-label="Alat" className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-surface p-1.5 shadow-lg">
           <ToolButton label="Pilih" active={tool === "move"} onClick={() => setTool("move")}>
@@ -1255,6 +1375,9 @@ export function EditorShell({
           <ToolButton label="Elemen Mat" active={tool === "mat"} onClick={() => setTool("mat")}>
             <Apple size={18} />
           </ToolButton>
+          <ToolButton label="Teks gaya" active={tool === "teksgaya"} onClick={() => setTool("teksgaya")}>
+            <Zap size={18} />
+          </ToolButton>
           <span className="mx-1 h-8 w-px bg-line" />
           <ToolButton label="Undo" onClick={undo}>
             <Undo2 size={18} />
@@ -1265,7 +1388,7 @@ export function EditorShell({
         </div>
         {tool !== "move" && (
           <p role="status" className="absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/80 px-3 py-1 text-xs text-white">
-            {tool === "text" ? "Klik di dalam panel untuk menaruh balon." : "Klik di dalam panel untuk menaruh kumpulan benda (jumlah pasti)."} Esc untuk batal.
+            {tool === "text" ? "Klik di dalam panel untuk menaruh balon." : tool === "teksgaya" ? "Klik di dalam panel untuk menaruh teks bergaya (judul atau efek suara)." : "Klik di dalam panel untuk menaruh kumpulan benda (jumlah pasti)."} Esc untuk batal.
           </p>
         )}
 

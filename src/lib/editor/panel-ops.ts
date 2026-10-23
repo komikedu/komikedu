@@ -1,5 +1,5 @@
 import { newId } from "./factory";
-import { PAGE_H, PAGE_W, type Bubble, type EditorPage, type Panel, type Point } from "./types";
+import { PAGE_H, PAGE_W, type Bubble, type EditorPage, type Latar, type Panel, type Point } from "./types";
 
 /**
  * Operasi panel di editor. Semua fungsi MENGUBAH halaman di tempat (cocok dengan draft immer di store)
@@ -230,6 +230,14 @@ export function setImageRect(page: EditorPage, panelId: string, r: { x: number; 
   const w = clamp(Math.round(r.w), MIN_IMAGE, PAGE_W * 3);
   const h = clamp(Math.round(r.h), MIN_IMAGE, PAGE_H * 3);
   p.imageRect = { x: clamp(Math.round(r.x), -PAGE_W, PAGE_W * 2), y: clamp(Math.round(r.y), -PAGE_H, PAGE_H * 2), w, h };
+  return true;
+}
+
+/** Pola latar panel; null = tanpa pola. */
+export function setLatar(page: EditorPage, panelId: string, latar: Latar | null): boolean {
+  const p = page.panels.find((x) => x.id === panelId);
+  if (!p) return false;
+  p.latar = latar ? { ...latar } : null;
   return true;
 }
 

@@ -1,11 +1,12 @@
-import { PAGE_H, PAGE_W } from "@/lib/editor/types";
+import { cssLatar } from "@/lib/editor/latar-panel";
+import { PAGE_H, PAGE_W, type Latar } from "@/lib/editor/types";
 
 type Rect = { x: number; y: number; w: number; h: number };
 type Pt = { x: number; y: number };
 
 /** Halaman 1 komik sebagai data ringan untuk thumbnail (koordinat editor, halaman 900 x 1200). */
 export type HalamanThumb = {
-  panels: (Rect & { corners?: Pt[]; gambar?: Rect; imageUrl: string | null })[];
+  panels: (Rect & { corners?: Pt[]; gambar?: Rect; latar?: Latar; imageUrl: string | null })[];
 };
 
 const pct = (n: number) => `${Math.round(n * 1000) / 10}%`;
@@ -19,6 +20,7 @@ export function gayaPanel(p: HalamanThumb["panels"][number]) {
     height: pct(p.h / PAGE_H),
     clipPath:
       p.corners?.length === 4 ? `polygon(${p.corners.map((c) => `${pct((c.x - p.x) / p.w)} ${pct((c.y - p.y) / p.h)}`).join(", ")})` : undefined,
+    ...(p.latar ? cssLatar(p.latar, p.w, p.h) : {}),
   };
 }
 
@@ -29,7 +31,7 @@ export function gayaGambar(p: HalamanThumb["panels"][number]) {
   return { left: pct((g.x - p.x) / p.w), top: pct((g.y - p.y) / p.h), width: pct(g.w / p.w), height: pct(g.h / p.h) };
 }
 
-type Row = { posisi: (Rect & { corners?: Pt[]; gambar?: Rect }) | null; image_url: string | null; tampil: boolean | null; urutan: number };
+type Row = { posisi: (Rect & { corners?: Pt[]; gambar?: Rect; latar?: Latar }) | null; image_url: string | null; tampil: boolean | null; urutan: number };
 
 /** Ubah baris panel halaman 1 dari database; null bila tidak ada panel yang punya gambar. */
 export function halamanThumb(rows: Row[] | null | undefined): HalamanThumb | null {

@@ -1,9 +1,13 @@
 "use client";
 
-import { Circle, Ellipse, Group, Image as KImage, Line, Rect, Text } from "react-konva";
+import { Circle, Ellipse, Group, Image as KImage, Line, Rect, Shape, Text } from "react-konva";
 import type Konva from "konva";
+import { areaTeks, garisGerak, lingkaranAwan, titikGerigi } from "@/lib/editor/bentuk-balon";
+import { burstTeks, gayaTeks, lapisanTeks, titikBurst } from "@/lib/editor/gaya-teks";
+import { irisanSinar, jajaranGaris, jariSinar, titikGradasi, titikHalftone } from "@/lib/editor/latar-panel";
 import { layoutKumpulan } from "@/lib/editor/math-elements";
-import { PAGE_H, PAGE_W, type Bubble, type EditorPage, type Panel } from "@/lib/editor/types";
+import { PAGE_H, PAGE_W, type Bubble, type EditorPage, type ElemenStiker, type ElemenTeks, type MathElement, type Panel } from "@/lib/editor/types";
+import { FONT_GAYA } from "./font-gaya";
 import { IkonBendaView } from "./ikon-benda";
 
 /**
@@ -39,6 +43,140 @@ export function klipPanel(panel: Panel, lokal: number[] | null) {
     : { clipX: 0, clipY: 0, clipWidth: panel.w, clipHeight: panel.h };
 }
 
+/** Pola latar panel (halftone, sinar, garis, gradasi) di koordinat lokal panel; digambar di bawah gambar dan di atas warna dasar. */
+export function LatarPanel({ panel }: { panel: Panel }) {
+  const latar = panel.latar;
+  if (!latar) return null;
+  const { w, h } = panel;
+  return (
+    <Shape
+      listening={false}
+      sceneFunc={(ctx) => {
+        const c = (ctx as unknown as { _context: CanvasRenderingContext2D })._context;
+        c.fillStyle = latar.warna1;
+        c.fillRect(0, 0, w, h);
+        if (latar.jenis === "gradasi") {
+          const { mulai, akhir } = titikGradasi(w, h, latar.sudut);
+          const g = c.createLinearGradient(mulai.x, mulai.y, akhir.x, akhir.y);
+          g.addColorStop(0, latar.warna1);
+          g.addColorStop(1, latar.warna2);
+          c.fillStyle = g;
+          c.fillRect(0, 0, w, h);
+          return;
+        }
+        c.fillStyle = latar.warna2;
+        c.beginPath();
+        if (latar.jenis === "halftone" || latar.jenis === "halftone-pudar") {
+          for (const t of titikHalftone(w, h, latar.ukuran, latar.sudut, latar.jenis === "halftone-pudar")) {
+            c.moveTo(t.x + t.r, t.y);
+            c.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+          }
+        } else if (latar.jenis === "sinar") {
+          const r = jariSinar(w, h);
+          for (const s of irisanSinar(latar.ukuran, latar.sudut)) {
+            c.moveTo(w / 2, h / 2);
+            c.arc(w / 2, h / 2, r, s.dari, s.ke);
+            c.closePath();
+          }
+        } else if (latar.jenis === "garis") {
+          for (const poly of jajaranGaris(w, h, latar.ukuran, latar.sudut)) {
+            c.moveTo(poly[0].x, poly[0].y);
+            for (let i = 1; i < poly.length; i++) c.lineTo(poly[i].x, poly[i].y);
+            c.closePath();
+          }
+        }
+        c.fill();
+      }}
+    />
+  );
+}
+
+/** Teks bergaya: lapisan garis tepi, bayangan, dan isi digambar dari belakang ke depan di kotak elemen. */
+export function TeksGayaShape({ el }: { el: ElemenTeks }) {
+  const g = gayaTeks(el.gaya);
+  const burst = burstTeks(el);
+  return (
+    <>
+      {burst && (
+        <Shape
+          listening={false}
+          sceneFunc={(ctx) => {
+            const c = (ctx as unknown as { _context: CanvasRenderingContext2D })._context;
+            const poligon = titikBurst(el.w, el.h, burst.gerigi);
+            const jalur = () => {
+              c.beginPath();
+              poligon.forEach((t, i) => (i ? c.lineTo(t.x, t.y) : c.moveTo(t.x, t.y)));
+              c.closePath();
+            };
+            c.save();
+            jalur();
+            c.fillStyle = burst.isi;
+            c.fill();
+            c.clip();
+            c.fillStyle = burst.titik;
+            c.beginPath();
+            for (const t of titikHalftone(el.w, el.h, Math.max(14, Math.min(el.w, el.h) / 12), 45, true)) {
+              c.moveTo(t.x + t.r, t.y);
+              c.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+            }
+            c.fill();
+            c.restore();
+            jalur();
+            c.lineJoin = "miter";
+            c.lineWidth = Math.max(5, Math.min(el.w, el.h) / 40);
+            c.strokeStyle = burst.tepi;
+            c.stroke();
+          }}
+        />
+      )}
+      {lapisanTeks(el).map((l, i) => (
+        <Text
+          key={i}
+          x={l.dx ?? 0}
+          y={l.dy ?? 0}
+          width={el.w}
+          height={el.h}
+          text={el.text}
+          align="center"
+          verticalAlign="middle"
+          wrap="word"
+          fontFamily={FONT_GAYA[g.font]}
+          fontStyle={g.font === "comic" ? "bold" : "normal"}
+          fontSize={el.fontSize}
+          fill={l.fill}
+          stroke={l.stroke}
+          strokeWidth={l.strokeWidth}
+          fillAfterStrokeEnabled
+          lineJoin="round"
+          listening={false}
+        />
+      ))}
+    </>
+  );
+}
+
+/** Stiker: gambar muat utuh di kotaknya (tidak gepeng) dan berada di tengah. */
+export function StikerShape({ el, img }: { el: ElemenStiker; img: HTMLImageElement | null | undefined }) {
+  if (!img) return <Rect width={el.w} height={el.h} stroke="#9aa0aa" dash={[8, 6]} strokeWidth={2} listening={false} />;
+  const s = Math.min(el.w / img.width, el.h / img.height);
+  const w = img.width * s;
+  const h = img.height * s;
+  return <KImage image={img} x={(el.w - w) / 2} y={(el.h - h) / 2} width={w} height={h} listening={false} />;
+}
+
+/** Isi elemen di atas panel menurut jenisnya (tanpa pegangan seleksi). `img` dipakai stiker. */
+export function IsiElemen({ e, img }: { e: MathElement; img?: HTMLImageElement | null }) {
+  if (e.kind === "teks") return <TeksGayaShape el={e} />;
+  if (e.kind === "stiker") return <StikerShape el={e} img={img} />;
+  return (
+    <>
+      {layoutKumpulan(e).map((pos, i) => (
+        <IkonBendaView key={i} ikon={e.ikon} x={pos.x} y={pos.y} size={pos.size} />
+      ))}
+    </>
+  );
+}
+
 /** Gambar panel: posisi yang diatur guru, atau otomatis memenuhi panel. */
 export function GambarPanel({ panel, img, rect }: { panel: Panel; img: HTMLImageElement; rect?: { x: number; y: number; w: number; h: number } | null }) {
   const r = rect ?? panel.imageRect;
@@ -58,6 +196,96 @@ export function TepiPanel({ panel, lokal }: { panel: Panel; lokal: number[] | nu
   );
 }
 
+/** Ekor pikiran: dua lingkaran kecil menuju ujung ekor. */
+function EkorPikir({ b }: { b: Bubble }) {
+  if (!b.tail) return null;
+  const cx = b.w / 2;
+  const cy = b.h / 2;
+  return (
+    <>
+      <Circle x={cx + b.tail.dx * 0.55} y={cy + b.tail.dy * 0.7} radius={11} fill="#fff" stroke="#111" strokeWidth={3} />
+      <Circle x={cx + b.tail.dx} y={cy + b.tail.dy} radius={6} fill="#fff" stroke="#111" strokeWidth={3} />
+    </>
+  );
+}
+
+/** Balon dengan bentuk pilihan (kotak, awan, ledakan, teriakan, oval bergerak); ekor segitiga, atau lingkaran untuk awan. */
+function BalonBergaya({ b, tailPoints }: { b: Bubble; tailPoints: number[] | null }) {
+  const cx = b.w / 2;
+  const cy = b.h / 2;
+  const bentuk = b.bentuk!;
+  const segitiga = bentuk !== "awan" && tailPoints;
+  const tutup = segitiga ? <Line points={tailPoints.slice(0, 2).concat(tailPoints.slice(4))} stroke="#fff" strokeWidth={6} listening={false} /> : null;
+
+  if (bentuk === "awan") {
+    const { lingkaran, tengah } = lingkaranAwan(b.w, b.h);
+    return (
+      <>
+        <Shape
+          listening={false}
+          sceneFunc={(ctx) => {
+            const c = (ctx as unknown as { _context: CanvasRenderingContext2D })._context;
+            c.fillStyle = "#fff";
+            c.strokeStyle = "#111";
+            c.lineWidth = 8;
+            for (const l of lingkaran) {
+              c.beginPath();
+              c.arc(l.x, l.y, l.r, 0, Math.PI * 2);
+              c.stroke();
+            }
+            c.beginPath();
+            c.ellipse(tengah.x, tengah.y, tengah.rx, tengah.ry, 0, 0, Math.PI * 2);
+            c.stroke();
+            for (const l of lingkaran) {
+              c.beginPath();
+              c.arc(l.x, l.y, l.r - 1, 0, Math.PI * 2);
+              c.fill();
+            }
+            c.beginPath();
+            c.ellipse(tengah.x, tengah.y, tengah.rx, tengah.ry, 0, 0, Math.PI * 2);
+            c.fill();
+          }}
+        />
+        <EkorPikir b={b} />
+      </>
+    );
+  }
+
+  if (bentuk === "kotak") {
+    return (
+      <>
+        <Rect x={7} y={7} width={b.w} height={b.h} fill="#111" cornerRadius={22} listening={false} />
+        {segitiga && <Line points={tailPoints} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin="round" />}
+        <Rect width={b.w} height={b.h} fill="#fff" stroke="#111" strokeWidth={4} cornerRadius={22} />
+        {tutup}
+      </>
+    );
+  }
+
+  if (bentuk === "ledakan" || bentuk === "teriak") {
+    const poligon = bentuk === "ledakan" ? titikGerigi(b.w, b.h, 13, 0.62) : titikGerigi(b.w, b.h, 22, 0.8);
+    return (
+      <>
+        {segitiga && <Line points={tailPoints} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin="round" />}
+        <Line points={poligon.flatMap((t) => [t.x, t.y])} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin="miter" miterLimit={6} />
+        {tutup}
+      </>
+    );
+  }
+
+  // gerak: oval dengan garis gerak di dua sudutnya
+  return (
+    <>
+      {segitiga && <Line points={tailPoints} closed fill="#fff" stroke="#111" strokeWidth={4} lineJoin="round" />}
+      <Ellipse x={cx} y={cy} radiusX={cx} radiusY={cy} fill="#fff" stroke="#111" strokeWidth={4} />
+      {tutup}
+      {garisGerak(b.w, b.h).map((g, i) => (
+        <Line key={i} points={g} stroke="#111" strokeWidth={4} lineCap="round" listening={false} />
+      ))}
+    </>
+  );
+}
+
 export function BubbleShape({ b }: { b: Bubble }) {
   const cx = b.w / 2;
   const cy = b.h / 2;
@@ -65,7 +293,7 @@ export function BubbleShape({ b }: { b: Bubble }) {
 
   // segitiga ekor: dua titik di tepi balon searah ujung ekor, ujungnya di titik ekor
   let tailPoints: number[] | null = null;
-  if (tail && b.kind === "bicara") {
+  if (tail && (b.kind === "bicara" || (b.bentuk && b.bentuk !== "awan"))) {
     const len = Math.hypot(tail.dx, tail.dy) || 1;
     const ux = tail.dx / len;
     const uy = tail.dy / len;
@@ -79,7 +307,8 @@ export function BubbleShape({ b }: { b: Bubble }) {
   if (b.kind === "narasi") {
     return <Rect width={b.w} height={b.h} fill="#fff6c8" stroke="#111" strokeWidth={4} cornerRadius={4} />;
   }
-  if (b.kind === "pikir") {
+  if (b.bentuk && b.bentuk !== "oval") return <BalonBergaya b={b} tailPoints={tailPoints} />;
+  if (b.kind === "pikir" && !b.bentuk) {
     return (
       <>
         <Rect width={b.w} height={b.h} fill="#fff" stroke="#111" strokeWidth={4} cornerRadius={Math.min(b.w, b.h) / 2} />
@@ -104,14 +333,15 @@ export function BubbleShape({ b }: { b: Bubble }) {
 /** Bentuk balon beserta teksnya (tanpa pegangan seleksi). */
 export function IsiBalon({ b, fontFamily }: { b: Bubble; fontFamily: string }) {
   const pad = 14;
+  const area = b.kind === "narasi" || !b.bentuk ? { x: pad, y: pad / 2, w: b.w - pad * 2, h: b.h - pad } : areaTeks(b.bentuk, b.w, b.h);
   return (
     <>
       <BubbleShape b={b} />
       <Text
-        x={pad}
-        y={pad / 2}
-        width={b.w - pad * 2}
-        height={b.h - pad}
+        x={area.x}
+        y={area.y}
+        width={area.w}
+        height={area.h}
         text={b.text}
         align="center"
         verticalAlign="middle"
@@ -142,6 +372,7 @@ export function HalamanStatis({ page, gambar, fontFamily }: { page: EditorPage; 
           return (
             <Group key={p.id} x={p.x} y={p.y} {...klipPanel(p, lokal)}>
               <Rect width={p.w} height={p.h} fill="#eef0f3" />
+              <LatarPanel panel={p} />
               {img && <GambarPanel panel={p} img={img} />}
               <TepiPanel panel={p} lokal={lokal} />
             </Group>
@@ -150,10 +381,8 @@ export function HalamanStatis({ page, gambar, fontFamily }: { page: EditorPage; 
       {page.elements
         .filter((e) => e.visible)
         .map((e) => (
-          <Group key={e.id} x={e.x} y={e.y}>
-            {layoutKumpulan(e).map((pos, i) => (
-              <IkonBendaView key={i} ikon={e.ikon} x={pos.x} y={pos.y} size={pos.size} />
-            ))}
+          <Group key={e.id} x={e.x} y={e.y} rotation={e.rotasi ?? 0}>
+            <IsiElemen e={e} img={e.kind === "stiker" ? gambar.get(e.url) : undefined} />
           </Group>
         ))}
       {page.bubbles

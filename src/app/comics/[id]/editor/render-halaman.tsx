@@ -1,5 +1,6 @@
 "use client";
 
+import { muatFontGaya } from "./font-gaya";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type Konva from "konva";
@@ -77,8 +78,12 @@ export type KemajuanEkspor = (selesai: number, total: number) => void;
 export async function renderSemuaHalaman(pages: EditorPage[], fontFamily: string, kemajuan?: KemajuanEkspor): Promise<Uint8Array[]> {
   // font balon harus sudah termuat sebelum teks diukur, kalau tidak teks memakai font cadangan
   await document.fonts.load(`bold 24px ${fontFamily}`).catch(() => []);
+  await muatFontGaya();
   await document.fonts.ready;
-  const gambar = await muatGambar(pages.flatMap((p) => p.panels.filter((x) => x.visible && x.imageUrl).map((x) => x.imageUrl as string)));
+  const gambar = await muatGambar(pages.flatMap((p) => [
+      ...p.panels.filter((x) => x.visible && x.imageUrl).map((x) => x.imageUrl as string),
+      ...p.elements.flatMap((e) => (e.kind === "stiker" && e.visible ? [e.url] : [])),
+    ]));
 
   const jpegs: Uint8Array[] = [];
   for (let i = 0; i < pages.length; i++) {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { applyPanelImages } from "@/lib/editor/store";
 
-export type Versi = { id: string; url: string; sumber: "halaman" | "edit" | "salinan" | "unggah"; dibuat: string };
+export type Versi = { id: string; url: string; sumber: "halaman" | "edit" | "salinan" | "unggah" | "tanpa-latar"; dibuat: string };
 
 /**
  * Riwayat versi gambar sebuah panel. Daftar dimuat ulang tiap gambar panel berubah (hasil generate, edit AI,

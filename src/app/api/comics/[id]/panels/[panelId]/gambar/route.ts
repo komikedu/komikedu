@@ -25,6 +25,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const file = form?.get("file");
   if (!(file instanceof File)) return NextResponse.json({ ok: false, error: "Pilih berkas gambar" }, { status: 400 });
 
-  const res = await unggahGambarPanel(supabase, createAdminClient(), user.id, id, panelId, new Uint8Array(await file.arrayBuffer()));
+  const res = await unggahGambarPanel(supabase, createAdminClient(), user.id, id, panelId, new Uint8Array(await file.arrayBuffer()), form?.get("sumber") === "tanpa-latar" ? "tanpa-latar" : "unggah");
   return res.ok ? NextResponse.json(res) : NextResponse.json({ ok: false, error: res.error }, { status: res.status });
 }

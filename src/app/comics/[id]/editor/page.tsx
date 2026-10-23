@@ -24,7 +24,7 @@ export default async function EditorPage({ params }: { params: Promise<{ id: str
     supabase
       .from("pages")
       .select(
-        "id, urutan, template_layout, panels(id, urutan, script_json, image_url, posisi, tampil, adegan, math_elements_json, bubbles(id, jenis, teks, posisi, ukuran, ekor, font_size, tampil, urutan))",
+        "id, urutan, template_layout, elemen_bebas, panels(id, urutan, script_json, image_url, posisi, tampil, adegan, math_elements_json, bubbles(id, jenis, teks, posisi, ukuran, ekor, font_size, tampil, urutan))",
       )
       .eq("comic_id", id)
       .order("urutan"),

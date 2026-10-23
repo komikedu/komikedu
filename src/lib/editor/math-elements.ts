@@ -1,4 +1,4 @@
-import type { IkonBenda, MathElement } from "./types";
+import type { ElemenKumpulan, IkonBenda } from "./types";
 
 /** Ikon benda untuk elemen "Kumpulan benda". Digambar sebagai vektor, jadi jumlahnya selalu tepat. */
 export const IKON_BENDA: { id: IkonBenda; nama: string }[] = [
@@ -19,7 +19,7 @@ export const namaIkon = (id: IkonBenda) => IKON_BENDA.find((i) => i.id === id)?.
  * Posisi setiap ikon di dalam elemen (relatif terhadap pojok kiri-atas elemen), disusun per baris.
  * Ukuran sel menyesuaikan kotak elemen agar semua ikon muat; susunan berada di tengah kotak.
  */
-export function layoutKumpulan(el: Pick<MathElement, "w" | "h" | "jumlah" | "kolom">): { x: number; y: number; size: number }[] {
+export function layoutKumpulan(el: Pick<ElemenKumpulan, "w" | "h" | "jumlah" | "kolom">): { x: number; y: number; size: number }[] {
   const jumlah = Math.max(0, Math.min(MAX_JUMLAH, Math.floor(el.jumlah)));
   const kolom = Math.max(1, Math.min(MAX_KOLOM, Math.floor(el.kolom), jumlah || 1));
   const baris = Math.max(1, Math.ceil(jumlah / kolom));

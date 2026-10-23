@@ -1,5 +1,6 @@
 import { getLayout } from "@/lib/ai/layouts";
-import { PAGE_H, PAGE_W, type Bubble, type BubbleKind, type EditorPage, type MathElement, type Panel } from "./types";
+import { gayaTeks } from "./gaya-teks";
+import { PAGE_H, PAGE_W, type Bubble, type BubbleKind, type EditorPage, type ElemenKumpulan, type ElemenStiker, type ElemenTeks, type Panel } from "./types";
 
 /** UUID agar id bisa langsung dipakai sebagai primary key di database. */
 export const newId = () => crypto.randomUUID();
@@ -50,7 +51,7 @@ export function createBubble(panelId: string, kind: BubbleKind, cx: number, cy: 
 }
 
 /** Elemen "kumpulan benda" baru di titik (cx, cy): bawaan 10 apel, 5 per baris. */
-export function createKumpulan(panelId: string, cx: number, cy: number): MathElement {
+export function createKumpulan(panelId: string | null, cx: number, cy: number): ElemenKumpulan {
   const w = 300;
   const h = 120;
   return {
@@ -64,6 +65,44 @@ export function createKumpulan(panelId: string, cx: number, cy: number): MathEle
     ikon: "apel",
     jumlah: 10,
     kolom: 5,
+    visible: true,
+  };
+}
+
+/** Teks bergaya baru di titik (cx, cy): bawaan efek suara "BUM!" bergaya ledakan. */
+export function createTeks(panelId: string | null, cx: number, cy: number, gayaId = "sfx-ledak", text = "BUM!"): ElemenTeks {
+  const g = gayaTeks(gayaId);
+  const w = g.kotak?.w ?? 360;
+  const h = g.kotak?.h ?? 170;
+  return {
+    id: newId(),
+    panelId,
+    kind: "teks",
+    x: Math.round(Math.min(Math.max(cx - w / 2, 0), PAGE_W - w)),
+    y: Math.round(Math.min(Math.max(cy - h / 2, 0), PAGE_H - h)),
+    w,
+    h,
+    text,
+    gaya: g.id,
+    fontSize: g.fontSize,
+    visible: true,
+  };
+}
+
+/** Stiker baru di tengah halaman; sisi terpanjangnya `sisi` unit dan rasio gambar (lebar / tinggi) dipertahankan. */
+export function createStiker(url: string, rasio: number, sisi = 420): ElemenStiker {
+  const r = Number.isFinite(rasio) && rasio > 0 ? rasio : 1;
+  const w = Math.round(r >= 1 ? sisi : sisi * r);
+  const h = Math.round(r >= 1 ? sisi / r : sisi);
+  return {
+    id: newId(),
+    panelId: null,
+    kind: "stiker",
+    x: Math.round((PAGE_W - w) / 2),
+    y: Math.round((PAGE_H - h) / 2),
+    w: Math.max(40, w),
+    h: Math.max(40, h),
+    url,
     visible: true,
   };
 }

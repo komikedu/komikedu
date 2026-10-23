@@ -2,17 +2,19 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { ImagePlus, Loader2, Sparkles, Upload, X } from "lucide-react";
+import { ImagePlus, Loader2, Sparkles, Sticker, Upload, X } from "lucide-react";
 import { gambarTokoh, isPresetId, type Tokoh } from "@/lib/comics/tokoh";
 import type { GaleriItem } from "@/lib/comics/galeri-tokoh";
 import { simpanTokoh } from "./actions";
+import { siapkanHapusLatar } from "./hapus-latar";
+import { jadikanStikerTokoh } from "./stiker-tokoh";
 import { TombolLengkapi } from "./tombol-lengkapi";
 
 const COST = 1;
 const MAX_BYTES = 5 * 1024 * 1024;
 
 type Jenis = "potret" | "badan";
-type Busy = null | "simpan" | "unggah" | "pasang" | Jenis;
+type Busy = null | "simpan" | "unggah" | "pasang" | "stiker" | Jenis;
 
 /** Gambar yang tampil untuk tab ini: potret tokoh siap pakai ada di /public, selebihnya URL di penyimpanan. */
 function gambarUntuk(t: Tokoh, jenis: Jenis, gaya: string | null): string | null {
@@ -166,6 +168,15 @@ export function TokohDetail({
     });
   }
 
+  /** Hapus latar gambar tab ini di peramban, simpan, lalu taruh sebagai stiker di halaman yang sedang dibuka. */
+  async function jadikanStiker() {
+    if (!gambarAktif) return;
+    await jalankan("stiker", async () => {
+      const galat = await jadikanStikerTokoh(comicId, gambarAktif);
+      setPesan(galat ? { ok: false, teks: galat } : { ok: true, teks: `${t!.nama} ditambahkan sebagai stiker di halaman yang sedang dibuka. Tutup jendela ini untuk mengaturnya.` });
+    });
+  }
+
   async function simpanSaja() {
     await jalankan("simpan", async () => {
       const hasil = await simpanDeskripsi();
@@ -208,7 +219,7 @@ export function TokohDetail({
             {sibuk && busy !== "simpan" && (
               <div role="status" className="absolute inset-0 grid place-items-center bg-black/60 text-white">
                 <p className="flex items-center gap-2 text-sm">
-                  <Loader2 size={18} className="animate-spin" /> {busy === "unggah" ? "Mengunggah..." : busy === "pasang" ? "Memasang gambar..." : `Membuat ${labelTab[busy as Jenis].toLowerCase()}... biasanya 10 sampai 40 detik`}
+                  <Loader2 size={18} className="animate-spin" /> {busy === "unggah" ? "Mengunggah..." : busy === "pasang" ? "Memasang gambar..." : busy === "stiker" ? "Menghapus latar dan menyimpan stiker..." : `Membuat ${labelTab[busy as Jenis].toLowerCase()}... biasanya 10 sampai 40 detik`}
                 </p>
               </div>
             )}
@@ -250,6 +261,17 @@ export function TokohDetail({
               className="flex items-center gap-1.5 rounded-lg bg-neutral-700 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-600 disabled:opacity-40"
             >
               <Upload size={14} /> Unggah
+            </button>
+            <button
+              type="button"
+              disabled={!gambar || sibuk}
+              onMouseEnter={siapkanHapusLatar}
+              onFocus={siapkanHapusLatar}
+              onClick={() => void jadikanStiker()}
+              title="Hapus latar gambar ini, lalu taruh sebagai stiker di halaman"
+              className="flex items-center gap-1.5 rounded-lg bg-neutral-700 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-600 disabled:opacity-40"
+            >
+              <Sticker size={14} /> Jadikan stiker
             </button>
             <input
               ref={fileRef}

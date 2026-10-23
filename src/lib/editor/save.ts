@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { catatVersi } from "@/lib/comics/versi-gambar";
+import { kunciKomik } from "@/lib/storage/gambar";
 import { EditorPayloadSchema, panelSalinan, toRows } from "./persist";
 
 export type SaveResult = { ok: true } | { ok: false; error: string; status: number };
@@ -23,6 +24,13 @@ export async function saveEditorData(
   if (!z.string().uuid().safeParse(comicId).success) return { ok: false, error: "Komik tidak valid", status: 400 };
   const parsed = EditorPayloadSchema.safeParse(pages);
   if (!parsed.success) return { ok: false, error: "Data editor tidak valid", status: 400 };
+
+  // gambar stiker harus berkas komik ini sendiri: kolom URL bisa ditulis klien, jangan sampai menunjuk milik orang lain
+  for (const page of parsed.data) {
+    for (const e of page.elements) {
+      if (e.kind === "stiker" && !kunciKomik(e.url, userId, comicId)) return { ok: false, error: "Gambar stiker tidak dikenali", status: 400 };
+    }
+  }
 
   const { data: comic } = await supabase.from("comics").select("id").eq("id", comicId).eq("user_id", userId).maybeSingle();
   if (!comic) return { ok: false, error: "Komik tidak ditemukan", status: 404 };

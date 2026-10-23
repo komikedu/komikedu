@@ -68,8 +68,10 @@ describe("elemen ikut panelnya", () => {
 
   it("tersimpan per panel dan dimuat ulang utuh", () => {
     const page = halaman();
-    page.elements[0].jumlah = 12;
-    page.elements[0].ikon = "jeruk";
+    const el0 = page.elements[0];
+    if (el0.kind !== "kumpulan") throw new Error("kumpulan");
+    el0.jumlah = 12;
+    el0.ikon = "jeruk";
     const parsed = EditorPayloadSchema.safeParse(JSON.parse(JSON.stringify([page])));
     expect(parsed.success).toBe(true);
     const rows = toRows("c1", parsed.success ? parsed.data : []);
@@ -123,6 +125,6 @@ describe("store elemen", () => {
     st().updateElement(id, { jumlah: 9 });
     st().updateElement(id, { jumlah: 10 });
     undo();
-    expect(page().elements[0].jumlah).toBe(9);
+    expect(page().elements[0]).toMatchObject({ jumlah: 9 });
   });
 });

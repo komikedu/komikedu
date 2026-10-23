@@ -37,6 +37,12 @@ describe("riwayat versi gambar panel", () => {
     expect(hapusGambar).not.toHaveBeenCalled();
   });
 
+  it("mencatat versi tanpa latar dengan sumbernya", async () => {
+    const { db, client } = tiruan({ panels: [{ id: "p1", image_url: "https://x/a.webp" }] });
+    await catatVersi(client, "p1", "https://x/tanpa.webp", "tanpa-latar");
+    expect(db.panel_images.at(-1)).toMatchObject({ sumber: "tanpa-latar" });
+  });
+
   it("gagal mencatat tidak melempar galat", async () => {
     const rusak = { from: () => ({ insert: async () => ({ error: new Error("db mati") }) }) } as never;
     await expect(catatVersi(rusak, "p1", "https://x/a.webp", "halaman")).resolves.toBeUndefined();

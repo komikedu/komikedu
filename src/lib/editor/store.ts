@@ -2,13 +2,14 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { temporal } from "zundo";
 import { gantiNamaDiTeks, type GantiNama } from "@/lib/comics/tokoh";
-import { createBubble, createKumpulan, createPage } from "./factory";
+import { panelDiTitik } from "./lepas-gambar";
+import { createBubble, createKumpulan, createPage, createStiker, createTeks } from "./factory";
 import { layoutBubbles } from "./from-script";
 import { deletePage, duplicatePage, insertPageAfter } from "./page-ops";
-import { deletePanel, duplicateBubble, duplicateElement, duplicatePanel, movePanel, resetCorners, resizePanel, setCorner, setImageRect, splitPanel, type SplitArah } from "./panel-ops";
-import type { Bubble, BubbleKind, EditorPage, MathElement, Panel, Point } from "./types";
+import { deletePanel, duplicateBubble, duplicateElement, duplicatePanel, movePanel, resetCorners, resizePanel, setCorner, setImageRect, setLatar, splitPanel, type SplitArah } from "./panel-ops";
+import type { Bubble, BubbleKind, EditorPage, ElemenKumpulan, ElemenTeks, Latar, Panel, Point } from "./types";
 
-type Tool = "move" | "text" | "mat";
+type Tool = "move" | "text" | "mat" | "teksgaya";
 
 type EditorState = {
   pages: EditorPage[];
@@ -38,14 +39,21 @@ type EditorState = {
   deleteBubble: (id: string) => void;
   duplicateBubble: (id: string) => void;
   setDrag: (drag: EditorState["drag"]) => void;
-  addKumpulan: (panelId: string, cx: number, cy: number) => void;
-  updateElement: (id: string, patch: Partial<Omit<MathElement, "id" | "panelId" | "kind">>) => void;
+  /** panelId null = elemen bebas di halaman */
+  addKumpulan: (panelId: string | null, cx: number, cy: number) => void;
+  addTeksGaya: (panelId: string | null, cx: number, cy: number) => void;
+  /** stiker bebas dari sebuah gambar; rasio = lebar / tinggi gambar */
+  addStiker: (url: string, rasio: number) => void;
+  /** lepas elemen dari panelnya (bebas) atau ikat ke panel di bawah titik tengahnya */
+  ikatElemen: (id: string, bebas: boolean) => void;
+  updateElement: (id: string, patch: Partial<Omit<ElemenKumpulan, "id" | "panelId" | "kind">> & Partial<Omit<ElemenTeks, "id" | "panelId" | "kind">>) => void;
   deleteElement: (id: string) => void;
   duplicateElement: (id: string) => void;
   setCornerEdit: (panelId: string | null) => void;
   /** Pilih layer gambar sebuah panel (untuk digeser dan diubah ukurannya). */
   selectImage: (panelId: string) => void;
   setImageRect: (panelId: string, rect: { x: number; y: number; w: number; h: number } | null) => void;
+  setLatar: (panelId: string, latar: Latar | null) => void;
   setCorner: (panelId: string, index: number, pt: Point) => void;
   resetCorners: (panelId: string) => void;
   movePanel: (id: string, dx: number, dy: number) => void;
@@ -167,12 +175,47 @@ export const useEditor = create<EditorState>()(
       addKumpulan: (panelId, cx, cy) =>
         set((s) => {
           const page = s.pages.find((p) => p.id === s.activePageId);
-          if (!page || !page.panels.some((p) => p.id === panelId)) return;
+          if (!page || (panelId !== null && !page.panels.some((p) => p.id === panelId))) return;
           const el = createKumpulan(panelId, cx, cy);
           page.elements.push(el);
           s.selectedId = el.id;
           s.selectedLayer = "panel";
           s.tool = "move";
+        }),
+
+      addTeksGaya: (panelId, cx, cy) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (!page || (panelId !== null && !page.panels.some((p) => p.id === panelId))) return;
+          const el = createTeks(panelId, cx, cy);
+          page.elements.push(el);
+          s.selectedId = el.id;
+          s.selectedLayer = "panel";
+          s.tool = "move";
+        }),
+
+      addStiker: (url, rasio) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (!page) return;
+          const el = createStiker(url, rasio);
+          page.elements.push(el);
+          s.selectedId = el.id;
+          s.selectedLayer = "panel";
+          s.tool = "move";
+        }),
+
+      ikatElemen: (id, bebas) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          const e = page?.elements.find((x) => x.id === id);
+          if (!page || !e) return;
+          if (bebas) {
+            e.panelId = null;
+            return;
+          }
+          const tujuan = panelDiTitik(page.panels, { x: e.x + e.w / 2, y: e.y + e.h / 2 });
+          if (tujuan) e.panelId = tujuan.id;
         }),
 
       updateElement: (id, patch) =>
@@ -213,6 +256,12 @@ export const useEditor = create<EditorState>()(
         set((s) => {
           const page = s.pages.find((p) => p.id === s.activePageId);
           if (page) setImageRect(page, panelId, rect);
+        }),
+
+      setLatar: (panelId, latar) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (page) setLatar(page, panelId, latar);
         }),
 
       setCorner: (panelId, index, pt) =>

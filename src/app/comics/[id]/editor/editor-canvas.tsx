@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Circle, Group, Image as KImage, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 import type Konva from "konva";
-import { Check, ChevronLeft, ChevronRight, Columns2, Copy, Maximize, Rows2, Shapes, Square, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Columns2, Copy, ImagePlus, Loader2, Maximize, Rows2, Shapes, Square, Trash2 } from "lucide-react";
 import { MAX_PANELS_PER_PAGE, coverRect, panelCorners } from "@/lib/editor/panel-ops";
+import { panelDiTitik, panelTujuan, pilihBerkasGambar, seretanBerkas } from "@/lib/editor/lepas-gambar";
 import { snapPoint, snapRectMove, snapTargets, type Guides, type SnapTargets } from "@/lib/editor/snap";
-import { layoutKumpulan } from "@/lib/editor/math-elements";
 import { IkonBendaView } from "./ikon-benda";
 import { useVersiGambar } from "./use-versi-gambar";
-import { GambarPanel, IsiBalon, TepiPanel, klipPanel, titikLokal } from "./bentuk-halaman";
+import { FONT_MAX, FONT_MIN } from "@/lib/editor/gaya-teks";
+import { muatFontGaya } from "./font-gaya";
+import { GambarPanel, IsiBalon, IsiElemen, LatarPanel, TepiPanel, klipPanel, titikLokal } from "./bentuk-halaman";
 import { useEditor } from "@/lib/editor/store";
 import { PAGE_H, PAGE_W, type Bubble, type MathElement, type Panel, type Point } from "@/lib/editor/types";
 
@@ -58,7 +60,7 @@ function PanelView({
   snapTh: number;
   onGuides: (g: Guides | null) => void;
   selected: boolean;
-  tool: "move" | "text" | "mat";
+  tool: "move" | "text" | "mat" | "teksgaya";
   onSelect: () => void;
   onTextTool: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void;
   onDragState: (dragging: boolean) => void;
@@ -151,6 +153,7 @@ function PanelView({
       }}
     >
       <Rect ref={bgRef} width={panel.w} height={panel.h} fill="#eef0f3" />
+      <LatarPanel panel={panel} />
       {img && <GambarPanel panel={panel} img={img} rect={liveImage} />}
       {(!img || generating) && (
         <>
@@ -198,7 +201,14 @@ function ElementView({
       trRef.current.nodes([ref.current]);
       trRef.current.getLayer()?.batchDraw();
     }
-  }, [selected, trRef, el.w, el.h, el.x, el.y]);
+  }, [selected, trRef, el.w, el.h, el.x, el.y, el.rotasi]);
+
+  // huruf gaya baru termuat setelah kanvas pertama kali menggambar: gambar ulang supaya tidak tertinggal huruf cadangan
+  const stiker = useImage(el.kind === "stiker" ? el.url : null);
+  const teks = el.kind === "teks";
+  useEffect(() => {
+    if (teks) void muatFontGaya().then(() => ref.current?.getLayer()?.batchDraw());
+  }, [teks]);
 
   if (!el.visible) return null;
   return (
@@ -206,6 +216,7 @@ function ElementView({
       ref={ref}
       x={el.x + offset.dx}
       y={el.y + offset.dy}
+      rotation={el.rotasi ?? 0}
       draggable={draggable}
       onClick={onSelect}
       onTap={onSelect}
@@ -222,15 +233,15 @@ function ElementView({
         if (!node) return;
         const w = Math.max(40, Math.round(el.w * node.scaleX()));
         const h = Math.max(40, Math.round(el.h * node.scaleY()));
+        const sudut = Math.round(((node.rotation() + 540) % 360) - 180);
+        const ukuran = el.kind === "teks" ? { fontSize: Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(el.fontSize * node.scaleY()))) } : {};
         node.scale({ x: 1, y: 1 });
-        update(el.id, { x: Math.round(node.x()), y: Math.round(node.y()), w, h });
+        update(el.id, { x: Math.round(node.x()), y: Math.round(node.y()), w, h, rotasi: sudut, ...ukuran });
       }}
     >
       {/* bidang transparan agar seluruh kotak elemen bisa diklik dan diseret */}
       <Rect width={el.w} height={el.h} fill="#ffffff" opacity={0.01} />
-      {layoutKumpulan(el).map((pos, i) => (
-        <IkonBendaView key={i} ikon={el.ikon} x={pos.x} y={pos.y} size={pos.size} />
-      ))}
+      <IsiElemen e={el} img={stiker} />
     </Group>
   );
 }
@@ -476,7 +487,18 @@ function PenukarVersi({ versi, className }: { versi: ReturnType<typeof useVersiG
   );
 }
 
-export default function EditorCanvas({ fontFamily, generating = false, comicId }: { fontFamily: string; generating?: boolean; comicId?: string }) {
+export default function EditorCanvas({
+  fontFamily,
+  generating = false,
+  comicId,
+  onLepasGambar,
+}: {
+  fontFamily: string;
+  generating?: boolean;
+  comicId?: string;
+  /** pasang gambar ke panel (seret-lepas atau tempel); kembalikan pesan galat, atau null bila berhasil. Kosong bila komik belum tersimpan. */
+  onLepasGambar?: (panelId: string, file: File) => Promise<string | null>;
+}) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const trRef = useRef<Konva.Transformer>(null);
   const panelTrRef = useRef<Konva.Transformer>(null);
@@ -487,6 +509,9 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
   const [scroll, setScroll] = useState({ x: 0, y: 0 });
   const [guides, setGuides] = useState<Guides | null>(null);
   const [liveImage, setLiveImage] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  /** panel yang sedang disorot saat berkas diseret di atas kanvas, dan pesan hasil pemasangan gambar */
+  const [sasaranLepas, setSasaranLepas] = useState<string | null>(null);
+  const [infoLepas, setInfoLepas] = useState<{ ok: boolean; teks: string; sibuk?: boolean } | null>(null);
 
   const page = useEditor((s) => s.pages.find((p) => p.id === s.activePageId));
   const selectedId = useEditor((s) => s.selectedId);
@@ -505,6 +530,7 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
   const resetCorners = useEditor((s) => s.resetCorners);
   const selectedLayer = useEditor((s) => s.selectedLayer);
   const addKumpulan = useEditor((s) => s.addKumpulan);
+  const addTeksGaya = useEditor((s) => s.addTeksGaya);
   const duplicateElement = useEditor((s) => s.duplicateElement);
   const deleteElement = useEditor((s) => s.deleteElement);
   const setImageRect = useEditor((s) => s.setImageRect);
@@ -522,6 +548,50 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
   useEffect(() => {
     document.fonts?.ready.then(() => setFontTick((t) => t + 1));
   }, []);
+
+  /** Pasang beberapa berkas gambar mulai dari panel `panelId` (satu berkas per panel, urut baca). Dipakai seret-lepas dan tempel. */
+  const pasangBerkas = useCallback(
+    async (berkasMentah: File[], panelId: string) => {
+      if (!onLepasGambar) return setInfoLepas({ ok: false, teks: "Hanya tersedia di komik yang tersimpan." });
+      const st = useEditor.getState();
+      const pg = st.pages.find((p) => p.id === st.activePageId);
+      if (!pg) return;
+      const tujuan = panelTujuan(pg.panels, panelId, berkasMentah.length);
+      const pilihan = pilihBerkasGambar(berkasMentah, tujuan.length);
+      if (!pilihan.berkas.length) return setInfoLepas({ ok: false, teks: pilihan.pesan ?? "Tidak ada gambar yang bisa dipasang." });
+      for (let i = 0; i < pilihan.berkas.length; i++) {
+        const nomor = pg.panels.findIndex((p) => p.id === tujuan[i].id) + 1;
+        setInfoLepas({ ok: true, sibuk: true, teks: `Mengunggah gambar ${i + 1}/${pilihan.berkas.length} ke panel ${nomor}...` });
+        const galat = await onLepasGambar(tujuan[i].id, pilihan.berkas[i]);
+        if (galat) return setInfoLepas({ ok: false, teks: galat });
+      }
+      setInfoLepas({ ok: true, teks: `Gambar dipasang ke ${pilihan.berkas.length} panel.${pilihan.pesan ? ` ${pilihan.pesan}` : ""} Gambar lama ada di Riwayat gambar.` });
+    },
+    [onLepasGambar],
+  );
+
+  // pesan hasil pemasangan hilang sendiri (yang sedang berjalan tetap tampil)
+  useEffect(() => {
+    if (!infoLepas || infoLepas.sibuk) return;
+    const t = setTimeout(() => setInfoLepas(null), 6000);
+    return () => clearTimeout(t);
+  }, [infoLepas]);
+
+  // tempel gambar (Ctrl+V) ke panel yang sedang dipilih; tidak aktif saat mengetik di kolom isian
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable]")) return;
+      const berkas = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+      if (!berkas.length) return;
+      const st = useEditor.getState();
+      const panel = st.pages.find((p) => p.id === st.activePageId)?.panels.find((p) => p.id === st.selectedId);
+      e.preventDefault();
+      if (!panel) return setInfoLepas({ ok: false, teks: "Pilih panel dulu, lalu tempel gambarnya." });
+      void pasangBerkas(berkas, panel.id);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [pasangBerkas]);
 
   // seretan yang terputus (mis. mode gambar dibuka di tengah seretan) tidak boleh menyembunyikan toolbar selamanya
   useEffect(() => {
@@ -550,6 +620,16 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
   const offsetX = Math.max(0, (size.w - PAGE_W * scale) / 2);
   const offsetY = Math.max(FIT_PADDING / 2, (size.h - PAGE_H * scale) / 2);
 
+  /** Panel di bawah kursor saat berkas diseret: posisi layar diubah ke koordinat halaman (memperhitungkan gulir, zoom, dan tepi). */
+  const panelDariSeretan = (e: React.DragEvent) => {
+    const el = wrapRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const x = e.clientX - r.left + el.scrollLeft;
+    const y = e.clientY - r.top + el.scrollTop;
+    return panelDiTitik(page.panels, { x: (x - offsetX) / scale, y: (y - offsetY) / scale });
+  };
+
   const placeBubble = (panelId: string) => (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (tool === "move") return;
     const pos = e.target.getStage()?.getPointerPosition();
@@ -557,7 +637,19 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
     const cx = (pos.x - offsetX) / scale;
     const cy = (pos.y - offsetY) / scale;
     if (tool === "mat") addKumpulan(panelId, cx, cy);
+    else if (tool === "teksgaya") addTeksGaya(panelId, cx, cy);
     else addBubble(panelId, "bicara", cx, cy);
+  };
+
+  /** Alat Elemen Mat atau Teks gaya diklik di luar panel: elemen bebas di halaman. */
+  const placeBebas = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (tool !== "mat" && tool !== "teksgaya") return;
+    const pos = e.target.getStage()?.getPointerPosition();
+    if (!pos) return;
+    const cx = (pos.x - offsetX) / scale;
+    const cy = (pos.y - offsetY) / scale;
+    if (tool === "mat") addKumpulan(null, cx, cy);
+    else addTeksGaya(null, cx, cy);
   };
 
   // toolbar mengambang di atas elemen terpilih (di bawahnya bila tidak ada ruang di atas), dan selalu
@@ -581,6 +673,23 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
     <div
       ref={wrapRef}
       onScroll={(e) => setScroll({ x: e.currentTarget.scrollLeft, y: e.currentTarget.scrollTop })}
+      onDragOver={(e) => {
+        if (!seretanBerkas(e.dataTransfer.types)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        setSasaranLepas(panelDariSeretan(e)?.id ?? null);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setSasaranLepas(null);
+      }}
+      onDrop={(e) => {
+        if (!seretanBerkas(e.dataTransfer.types)) return;
+        e.preventDefault();
+        setSasaranLepas(null);
+        const panel = panelDariSeretan(e);
+        if (!panel) return setInfoLepas({ ok: false, teks: "Lepaskan gambar di dalam sebuah panel." });
+        void pasangBerkas(Array.from(e.dataTransfer.files), panel.id);
+      }}
       className="relative h-full w-full overflow-auto"
       style={{ cursor: tool === "move" ? "default" : "crosshair" }}
     >
@@ -592,7 +701,7 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
         }}
       >
         <Layer x={offsetX} y={offsetY} scaleX={scale} scaleY={scale}>
-          <Rect name="page-bg" width={PAGE_W} height={PAGE_H} fill="#fff" shadowColor="#000" shadowOpacity={0.18} shadowBlur={24} />
+          <Rect name="page-bg" width={PAGE_W} height={PAGE_H} fill="#fff" shadowColor="#000" shadowOpacity={0.18} shadowBlur={24} onClick={placeBebas} onTap={placeBebas} />
           {page.panels.map((p, i) => (
             <PanelView
               key={p.id}
@@ -618,7 +727,7 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
               el={el}
               selected={el.id === selectedId}
               draggable={tool === "move"}
-              offset={drag && drag.panelId === el.panelId ? drag : { dx: 0, dy: 0 }}
+              offset={drag && el.panelId && drag.panelId === el.panelId ? drag : { dx: 0, dy: 0 }}
               onSelect={() => tool === "move" && select(el.id)}
               onDragState={setDragging}
               trRef={elTrRef}
@@ -626,7 +735,9 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
           ))}
           <Transformer
             ref={elTrRef}
-            rotateEnabled={false}
+            rotateEnabled
+            rotationSnaps={[0, 45, 90, 135, 180, -135, -90, -45]}
+            rotationSnapTolerance={6}
             keepRatio={false}
             borderStroke="#7c3aed"
             anchorStroke="#7c3aed"
@@ -675,6 +786,34 @@ export default function EditorCanvas({ fontFamily, generating = false, comicId }
           />
         </Layer>
       </Stage>
+      {sasaranLepas &&
+        (() => {
+          const p = page.panels.find((x) => x.id === sasaranLepas);
+          if (!p) return null;
+          // sorotan mengikuti bentuk panel: poligon bila miring, kotak bila biasa
+          const poligon = p.corners ? `polygon(${p.corners.map((c) => `${((c.x - p.x) / p.w) * 100}% ${((c.y - p.y) / p.h) * 100}%`).join(", ")})` : undefined;
+          return (
+            <div
+              aria-hidden
+              className={`pointer-events-none absolute z-10 grid place-items-center bg-brand/20 ${p.corners ? "" : "border-4 border-dashed border-brand"}`}
+              style={{ left: offsetX + p.x * scale, top: offsetY + p.y * scale, width: p.w * scale, height: p.h * scale, clipPath: poligon }}
+            >
+              <span className="flex items-center gap-1.5 rounded-full bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground shadow">
+                <ImagePlus size={14} /> Lepas untuk memasang gambar
+              </span>
+            </div>
+          );
+        })()}
+      {infoLepas && (
+        <p
+          role={infoLepas.ok ? "status" : "alert"}
+          className={`absolute z-30 flex max-w-[min(28rem,90%)] -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2 text-xs shadow-lg ${infoLepas.ok ? "bg-gray-900 text-white" : "bg-red-600 text-white"}`}
+          style={{ left: scroll.x + size.w / 2, top: scroll.y + size.h - 70 }}
+        >
+          {infoLepas.sibuk && <Loader2 size={13} className="shrink-0 animate-spin" />}
+          <span>{infoLepas.teks}</span>
+        </p>
+      )}
       {toolbar && sel && (
         <div
           role="toolbar"

@@ -22,6 +22,7 @@ export async function unggahGambarPanel(
   comicId: string,
   panelId: string,
   bytes: Uint8Array,
+  sumber: "unggah" | "tanpa-latar" = "unggah",
 ): Promise<UnggahPanelResult> {
   if (bytes.length === 0 || bytes.length > MAX_UNGGAH_PANEL_BYTES) return { ok: false, error: "Ukuran gambar maksimal 8 MB", status: 400 };
 
@@ -51,7 +52,7 @@ export async function unggahGambarPanel(
     const imageUrl = await simpanGambar(admin, `${userId}/${comicId}/${panelId}-unggah-${Date.now()}.webp`, gambar, "image/webp");
     const { error } = await admin.from("panels").update({ image_url: imageUrl, status: "selesai" }).eq("id", panelId);
     if (error) throw error;
-    await catatVersi(admin, panelId, imageUrl, "unggah");
+    await catatVersi(admin, panelId, imageUrl, sumber);
     return { ok: true, imageUrl };
   } catch (e) {
     console.error("unggahGambarPanel gagal", panelId, e);

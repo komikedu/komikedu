@@ -37,7 +37,7 @@ export function duplicatePage(pages: EditorPage[], id: string): string | null {
       imageRect: p.imageRect ? { ...p.imageRect } : p.imageRect,
     })),
     bubbles: asal.bubbles.map((b) => ({ ...b, id: newId(), panelId: peta.get(b.panelId)!, tail: b.tail ? { ...b.tail } : null })),
-    elements: asal.elements.map((e) => ({ ...e, id: newId(), panelId: peta.get(e.panelId)! })),
+    elements: asal.elements.map((e) => ({ ...e, id: newId(), panelId: e.panelId ? (peta.get(e.panelId) ?? null) : null })),
   };
   pages.splice(idx + 1, 0, salinan);
   return salinan.id;

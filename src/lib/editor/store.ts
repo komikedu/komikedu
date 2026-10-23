@@ -1,12 +1,12 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { temporal } from "zundo";
-import { createBubble, createPage } from "./factory";
+import { createBubble, createKumpulan, createPage } from "./factory";
 import { layoutBubbles } from "./from-script";
-import { deletePanel, duplicateBubble, duplicatePanel, movePanel, resetCorners, resizePanel, setCorner, splitPanel, type SplitArah } from "./panel-ops";
-import type { Bubble, BubbleKind, EditorPage, Panel, Point } from "./types";
+import { deletePanel, duplicateBubble, duplicateElement, duplicatePanel, movePanel, resetCorners, resizePanel, setCorner, setImageRect, splitPanel, type SplitArah } from "./panel-ops";
+import type { Bubble, BubbleKind, EditorPage, MathElement, Panel, Point } from "./types";
 
-type Tool = "move" | "text";
+type Tool = "move" | "text" | "mat";
 
 type EditorState = {
   pages: EditorPage[];
@@ -18,6 +18,8 @@ type EditorState = {
   drag: { panelId: string; dx: number; dy: number } | null;
   /** Panel yang sedang diubah sudutnya (mode miring); tidak masuk riwayat. */
   cornerEdit: string | null;
+  /** Layer yang dipilih pada panel terpilih: bingkai panel atau gambar di dalamnya. */
+  selectedLayer: "panel" | "gambar";
 
   init: (pages: EditorPage[]) => void;
   setActivePage: (id: string) => void;
@@ -30,7 +32,14 @@ type EditorState = {
   deleteBubble: (id: string) => void;
   duplicateBubble: (id: string) => void;
   setDrag: (drag: EditorState["drag"]) => void;
+  addKumpulan: (panelId: string, cx: number, cy: number) => void;
+  updateElement: (id: string, patch: Partial<Omit<MathElement, "id" | "panelId" | "kind">>) => void;
+  deleteElement: (id: string) => void;
+  duplicateElement: (id: string) => void;
   setCornerEdit: (panelId: string | null) => void;
+  /** Pilih layer gambar sebuah panel (untuk digeser dan diubah ukurannya). */
+  selectImage: (panelId: string) => void;
+  setImageRect: (panelId: string, rect: { x: number; y: number; w: number; h: number } | null) => void;
   setCorner: (panelId: string, index: number, pt: Point) => void;
   resetCorners: (panelId: string) => void;
   movePanel: (id: string, dx: number, dy: number) => void;
@@ -53,6 +62,7 @@ export const useEditor = create<EditorState>()(
       zoom: 1,
       drag: null,
       cornerEdit: null,
+      selectedLayer: "panel",
 
       init: (pages) =>
         set((s) => {
@@ -68,6 +78,7 @@ export const useEditor = create<EditorState>()(
       select: (id) =>
         set((s) => {
           s.selectedId = id;
+          s.selectedLayer = "panel";
           if (s.cornerEdit !== id) s.cornerEdit = null;
         }),
       setTool: (tool) =>
@@ -123,9 +134,55 @@ export const useEditor = create<EditorState>()(
           s.drag = drag;
         }),
 
+      addKumpulan: (panelId, cx, cy) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (!page || !page.panels.some((p) => p.id === panelId)) return;
+          const el = createKumpulan(panelId, cx, cy);
+          page.elements.push(el);
+          s.selectedId = el.id;
+          s.selectedLayer = "panel";
+          s.tool = "move";
+        }),
+
+      updateElement: (id, patch) =>
+        set((s) => {
+          for (const page of s.pages) {
+            const e = page.elements.find((x) => x.id === id);
+            if (e) Object.assign(e, patch);
+          }
+        }),
+
+      deleteElement: (id) =>
+        set((s) => {
+          for (const page of s.pages) page.elements = page.elements.filter((e) => e.id !== id);
+          if (s.selectedId === id) s.selectedId = null;
+        }),
+
+      duplicateElement: (id) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          const baru = page && duplicateElement(page, id);
+          if (baru) s.selectedId = baru;
+        }),
+
       setCornerEdit: (panelId) =>
         set((s) => {
           s.cornerEdit = panelId;
+          if (panelId) s.selectedLayer = "panel";
+        }),
+
+      selectImage: (panelId) =>
+        set((s) => {
+          s.selectedId = panelId;
+          s.selectedLayer = "gambar";
+          s.cornerEdit = null;
+        }),
+
+      setImageRect: (panelId, rect) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (page) setImageRect(page, panelId, rect);
         }),
 
       setCorner: (panelId, index, pt) =>
@@ -208,7 +265,11 @@ export const useEditor = create<EditorState>()(
  */
 export function applyPanelImages(images: Record<string, string>) {
   const patch = (pages: EditorPage[]) =>
-    pages.map((pg) => (pg.panels.some((p) => images[p.id]) ? { ...pg, panels: pg.panels.map((p) => (images[p.id] ? { ...p, imageUrl: images[p.id] } : p)) } : pg));
+    pages.map((pg) =>
+      pg.panels.some((p) => images[p.id])
+        ? { ...pg, panels: pg.panels.map((p) => (images[p.id] ? { ...p, imageUrl: images[p.id], imageRect: null } : p)) }
+        : pg,
+    );
   const t = useEditor.temporal.getState();
   t.pause();
   useEditor.setState((s) => ({ pages: patch(s.pages) }));
@@ -233,4 +294,10 @@ export function selectSelectedBubble(s: Pick<EditorState, "pages" | "activePageI
 export function selectSelectedPanel(s: Pick<EditorState, "pages" | "activePageId" | "selectedId">) {
   const page = s.pages.find((p) => p.id === s.activePageId);
   return page?.panels.find((p) => p.id === s.selectedId) ?? null;
+}
+
+/** Elemen matematika yang sedang dipilih (null bila tidak ada). */
+export function selectSelectedElement(s: Pick<EditorState, "pages" | "activePageId" | "selectedId">) {
+  const page = s.pages.find((p) => p.id === s.activePageId);
+  return page?.elements.find((e) => e.id === s.selectedId) ?? null;
 }

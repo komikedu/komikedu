@@ -64,7 +64,7 @@ describe("toRows / fromNested", () => {
   it("baris panel tidak membawa image_url, status, atau script_json dari klien (adegan boleh)", () => {
     const rows = toRows("c1", [samplePage()]);
     for (const p of rows.panels) {
-      expect(Object.keys(p).sort()).toEqual(["adegan", "id", "page_id", "posisi", "tampil", "urutan"]);
+      expect(Object.keys(p).sort()).toEqual(["adegan", "id", "math_elements_json", "page_id", "posisi", "tampil", "urutan"]);
     }
   });
 });

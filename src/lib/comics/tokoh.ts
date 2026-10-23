@@ -74,3 +74,11 @@ export const fromPreset = (p: TokohPreset): Tokoh => ({ id: p.id, nama: p.nama, 
 
 /** Preset yang terdaftar saja; tokoh buatan guru tidak punya potret. */
 export const isPresetId = (id: string) => TOKOH_PRESET.some((p) => p.id === id);
+
+/**
+ * Apakah lembar karakter tersimpan masih sesuai tokoh pilihan guru (nama dan deskripsi sama persis).
+ * Bila tidak, lembar karakter harus disusun ulang dan referensi halaman lama tidak boleh dipakai lagi.
+ */
+export function sheetCocok(sheet: { nama: string; deskripsi: string }[], tokoh: Pick<Tokoh, "nama" | "deskripsi">[]): boolean {
+  return tokoh.every((t) => sheet.some((k) => k.nama === t.nama && k.deskripsi === t.deskripsi));
+}

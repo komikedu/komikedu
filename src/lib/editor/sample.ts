@@ -9,6 +9,7 @@ export function samplePages(): EditorPage[] {
     "Close-up Doni tersenyum paham sambil mengacungkan jempol.",
   ]);
   const [a, b, c] = p1.panels;
+  a.imageUrl = "/landing/halaman-contoh.webp"; // contoh gambar untuk mencoba mode edit gambar
   p1.bubbles = [
     createBubble(a.id, "bicara", a.x + 230, a.y + 80, "Lampu merah menyala tiap 4 detik, lampu biru tiap 6 detik."),
     createBubble(b.id, "bicara", b.x + b.w / 2, b.y + 90, "Kapan kedua lampu menyala bersamaan?"),

@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { lengkapiPanelKosong, type HalamanTetangga } from "@/lib/ai/lengkapi";
-import { createClient } from "@/lib/supabase/server";
+import { barisGenerations, rekamPemakaian, type Pemakaian } from "@/lib/ai/usage";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
 
@@ -66,8 +67,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (panel.length) tetangga.push({ posisi, panel });
   }
 
+  const pemakaian: Pemakaian[] = [];
+  // gratis bagi guru, tapi tetap dicatat agar biaya AI terlihat
+  const catat = (status: "selesai" | "gagal") =>
+    createAdminClient().from("generations").insert(barisGenerations(pemakaian, { user_id: user.id, jenis: "lengkapi", provider: "gemini", status }));
   try {
-    const hasil = await lengkapiPanelKosong({
+    const hasil = await rekamPemakaian(pemakaian, () => lengkapiPanelKosong({
       topik: comic.topik?.trim() || comic.judul,
       jenjang: comic.jenjang,
       mapel: comic.mapel,
@@ -75,11 +80,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       materi: materi?.teks_ekstraksi,
       panels: body.data.panels,
       tetangga,
-    });
+    }));
+    await catat(hasil.panels.length ? "selesai" : "gagal");
     if (!hasil.panels.length) return NextResponse.json({ ok: false, error: "AI belum berhasil mengisi panel. Coba lagi." }, { status: 502 });
     return NextResponse.json({ ok: true, ...hasil });
   } catch (e) {
     console.error("lengkapi naskah gagal", pageId, e);
+    await catat("gagal");
     return NextResponse.json({ ok: false, error: "Gagal melengkapi naskah. Coba lagi." }, { status: 500 });
   }
 }

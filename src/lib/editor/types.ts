@@ -34,9 +34,34 @@ export type Panel = {
    */
   corners?: Point[] | null;
   imageUrl: string | null;
+  /**
+   * Posisi dan ukuran gambar (koordinat halaman) bila guru menggeser atau mengubah ukurannya.
+   * Kosong = gambar otomatis memenuhi panel (seperti object-fit: cover).
+   */
+  imageRect?: { x: number; y: number; w: number; h: number } | null;
   visible: boolean;
   /** Deskripsi adegan dari naskah yang sudah disetujui. */
   adegan: string;
+};
+
+export type IkonBenda = "apel" | "jeruk" | "kue" | "bintang" | "kelereng" | "pensil";
+
+/**
+ * Elemen matematika yang digambar dari data (bukan oleh AI), sehingga angkanya pasti benar.
+ * "kumpulan" = sejumlah benda yang sama, mis. 10 apel disusun 5 per baris.
+ */
+export type MathElement = {
+  id: string;
+  panelId: string;
+  kind: "kumpulan";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  ikon: IkonBenda;
+  jumlah: number;
+  kolom: number;
+  visible: boolean;
 };
 
 export type EditorPage = {
@@ -44,4 +69,5 @@ export type EditorPage = {
   layoutId: string;
   panels: Panel[];
   bubbles: Bubble[];
+  elements: MathElement[];
 };

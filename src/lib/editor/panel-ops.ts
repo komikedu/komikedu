@@ -12,7 +12,6 @@ export const MAX_PANELS_PER_PAGE = 12;
 const OFFSET = 24;
 
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
-const center = (b: Bubble) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
 
 export type SplitArah = "horizontal" | "vertikal";
 
@@ -27,7 +26,7 @@ export function splitPanel(page: EditorPage, panelId: string, arah: SplitArah): 
   const half = Math.floor((total - PANEL_GAP) / 2);
   if (half < MIN_PANEL) return false;
 
-  const baru: Panel = { ...p, id: newId(), imageUrl: null, adegan: "", corners: null };
+  const baru: Panel = { ...p, id: newId(), imageUrl: null, imageRect: null, adegan: "", corners: null };
   if (arah === "horizontal") {
     p.w = half;
     baru.x = p.x + half + PANEL_GAP;
@@ -40,9 +39,9 @@ export function splitPanel(page: EditorPage, panelId: string, arah: SplitArah): 
   page.panels.splice(idx + 1, 0, baru);
 
   // balon yang titik tengahnya jatuh di bagian baru ikut pindah ke panel baru
-  for (const b of page.bubbles) {
+  for (const b of [...page.bubbles, ...page.elements]) {
     if (b.panelId !== p.id) continue;
-    const c = center(b);
+    const c = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
     const diBaru = arah === "horizontal" ? c.x >= baru.x : c.y >= baru.y;
     if (diBaru) b.panelId = baru.id;
   }
@@ -58,12 +57,20 @@ export function duplicatePanel(page: EditorPage, panelId: string): string | null
   const y = clamp(p.y + OFFSET, 0, PAGE_H - p.h);
   const dx = x - p.x;
   const dy = y - p.y;
-  const salinan: Panel = { ...p, id: newId(), x, y, corners: p.corners ? p.corners.map((c) => ({ x: c.x + dx, y: c.y + dy })) : null };
+  const salinan: Panel = {
+    ...p,
+    id: newId(),
+    x,
+    y,
+    corners: p.corners ? p.corners.map((c) => ({ x: c.x + dx, y: c.y + dy })) : null,
+    imageRect: p.imageRect ? { ...p.imageRect, x: p.imageRect.x + dx, y: p.imageRect.y + dy } : null,
+  };
   page.panels.splice(idx + 1, 0, salinan);
   const balon = page.bubbles
     .filter((b) => b.panelId === p.id)
     .map((b) => ({ ...b, id: newId(), panelId: salinan.id, x: b.x + dx, y: b.y + dy, tail: b.tail ? { ...b.tail } : null }));
   page.bubbles.push(...balon);
+  page.elements.push(...page.elements.filter((e) => e.panelId === p.id).map((e) => ({ ...e, id: newId(), panelId: salinan.id, x: e.x + dx, y: e.y + dy })));
   return salinan.id;
 }
 
@@ -72,6 +79,7 @@ export function deletePanel(page: EditorPage, panelId: string): boolean {
   if (page.panels.length <= 1 || !page.panels.some((p) => p.id === panelId)) return false;
   page.panels = page.panels.filter((p) => p.id !== panelId);
   page.bubbles = page.bubbles.filter((b) => b.panelId !== panelId);
+  page.elements = page.elements.filter((e) => e.panelId !== panelId);
   return true;
 }
 
@@ -87,7 +95,8 @@ export function movePanel(page: EditorPage, panelId: string, dx: number, dy: num
   p.x = nx;
   p.y = ny;
   if (p.corners) p.corners = p.corners.map((c) => ({ x: c.x + ax, y: c.y + ay }));
-  for (const b of page.bubbles) {
+  if (p.imageRect) p.imageRect = { ...p.imageRect, x: p.imageRect.x + ax, y: p.imageRect.y + ay };
+  for (const b of [...page.bubbles, ...page.elements]) {
     if (b.panelId === panelId) {
       b.x += ax;
       b.y += ay;
@@ -194,4 +203,40 @@ export function resetCorners(page: EditorPage, panelId: string): boolean {
   if (!p?.corners) return false;
   p.corners = null;
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Gambar di dalam panel: bisa digeser dan diubah ukurannya (rasio tetap), terpotong oleh bentuk panel.
+
+export const MIN_IMAGE = 40;
+
+/** Posisi gambar yang memenuhi panel tanpa gepeng (seperti CSS object-fit: cover). */
+export function coverRect(panel: { x: number; y: number; w: number; h: number }, iw: number, ih: number) {
+  const s = Math.max(panel.w / iw, panel.h / ih);
+  const w = iw * s;
+  const h = ih * s;
+  return { x: panel.x + (panel.w - w) / 2, y: panel.y + (panel.h - h) / 2, w, h };
+}
+
+/** Simpan posisi gambar; null = kembali otomatis memenuhi panel. Gambar boleh lebih besar dari halaman. */
+export function setImageRect(page: EditorPage, panelId: string, r: { x: number; y: number; w: number; h: number } | null): boolean {
+  const p = page.panels.find((x) => x.id === panelId);
+  if (!p) return false;
+  if (!r) {
+    p.imageRect = null;
+    return true;
+  }
+  const w = clamp(Math.round(r.w), MIN_IMAGE, PAGE_W * 3);
+  const h = clamp(Math.round(r.h), MIN_IMAGE, PAGE_H * 3);
+  p.imageRect = { x: clamp(Math.round(r.x), -PAGE_W, PAGE_W * 2), y: clamp(Math.round(r.y), -PAGE_H, PAGE_H * 2), w, h };
+  return true;
+}
+
+/** Duplikat elemen matematika di panel yang sama, digeser sedikit. */
+export function duplicateElement(page: EditorPage, elementId: string): string | null {
+  const e = page.elements.find((x) => x.id === elementId);
+  if (!e) return null;
+  const salinan = { ...e, id: newId(), x: clamp(e.x + OFFSET, 0, PAGE_W - e.w), y: clamp(e.y + OFFSET, 0, PAGE_H - e.h) };
+  page.elements.push(salinan);
+  return salinan.id;
 }

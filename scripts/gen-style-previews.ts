@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { IMAGE_MODEL } from "../src/lib/ai/gemini-image";
 import sharp from "sharp";
 import { writeFile } from "node:fs/promises";
 
@@ -15,7 +16,7 @@ const STYLES: Record<string, string> = {
 async function main() {
   for (const [id, style] of Object.entries(STYLES)) {
     const res = await ai.models.generateContent({
-      model: "gemini-3.1-flash-image",
+      model: IMAGE_MODEL,
       contents: `${SCENE} ${style}. Satu gambar penuh tanpa panel. Jangan ada teks, huruf, angka, atau logo.`,
       config: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "4:3" } },
     });

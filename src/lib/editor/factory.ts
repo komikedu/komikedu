@@ -1,5 +1,5 @@
 import { getLayout } from "@/lib/ai/layouts";
-import { PAGE_H, PAGE_W, type Bubble, type BubbleKind, type EditorPage, type Panel } from "./types";
+import { PAGE_H, PAGE_W, type Bubble, type BubbleKind, type EditorPage, type MathElement, type Panel } from "./types";
 
 /** UUID agar id bisa langsung dipakai sebagai primary key di database. */
 export const newId = () => crypto.randomUUID();
@@ -22,7 +22,7 @@ export function createPage(layoutId: string, adegan: string[] = []): EditorPage 
     visible: true,
     adegan: adegan[i] ?? "",
   }));
-  return { id: newId(), layoutId, panels, bubbles: [] };
+  return { id: newId(), layoutId, panels, bubbles: [], elements: [] };
 }
 
 const DEFAULT_SIZE: Record<BubbleKind, { w: number; h: number }> = {
@@ -45,6 +45,25 @@ export function createBubble(panelId: string, kind: BubbleKind, cx: number, cy: 
     h,
     tail: kind === "narasi" ? null : { dx: 20, dy: h / 2 + 40 },
     fontSize: 26,
+    visible: true,
+  };
+}
+
+/** Elemen "kumpulan benda" baru di titik (cx, cy): bawaan 10 apel, 5 per baris. */
+export function createKumpulan(panelId: string, cx: number, cy: number): MathElement {
+  const w = 300;
+  const h = 120;
+  return {
+    id: newId(),
+    panelId,
+    kind: "kumpulan",
+    x: Math.round(Math.min(Math.max(cx - w / 2, 0), PAGE_W - w)),
+    y: Math.round(Math.min(Math.max(cy - h / 2, 0), PAGE_H - h)),
+    w,
+    h,
+    ikon: "apel",
+    jumlah: 10,
+    kolom: 5,
     visible: true,
   };
 }

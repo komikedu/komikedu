@@ -3,6 +3,7 @@
 import { checkScript } from "@/lib/ai/check";
 import { createScript } from "@/lib/ai/pipeline";
 import type { Flag } from "@/lib/ai/schemas";
+import { barisGenerations, rekamPemakaian, type Pemakaian } from "@/lib/ai/usage";
 import { NASKAH_COST, NaskahEditSchema, uuid } from "@/lib/comics/naskah-edit";
 import { draftErrors } from "@/lib/comics/schema";
 import type { Tokoh } from "@/lib/comics/tokoh";
@@ -65,8 +66,9 @@ export async function generateNaskah(comicId: string): Promise<Result> {
     return { ok: false, error: payError ? "Gagal memproses kredit" : `Kredit tidak cukup (butuh ${NASKAH_COST})` };
   }
 
+  const pemakaian: Pemakaian[] = [];
   try {
-    const { outline, script, flags } = await createScript({
+    const { outline, script, flags } = await rekamPemakaian(pemakaian, () => createScript({
       topik: (comic.topik as string | null)?.trim() || (comic.judul as string),
       materi: materi?.teks_ekstraksi ?? undefined,
       jenjang: comic.jenjang as number,
@@ -75,14 +77,14 @@ export async function generateNaskah(comicId: string): Promise<Result> {
       cerita: (comic.cerita as string | null) ?? undefined,
       tokoh: ((comic.tokoh_json as Tokoh[] | null) ?? []).map((t) => ({ nama: t.nama, peran: t.peran, deskripsi: t.deskripsi })),
       jumlahHalaman: comic.jumlah_halaman as number,
-    });
+    }));
     const judul = comic.judul === "Komik tanpa judul" ? outline.judul.slice(0, 120) : (comic.judul as string);
     const { error } = await admin
       .from("comics")
       .update({ outline_json: outline, naskah_json: script, naskah_flags: flags, naskah_status: "review", naskah_error: null, judul })
       .eq("id", comicId);
     if (error) throw error;
-    await admin.from("generations").insert({ user_id: user.id, jenis: "naskah", provider: "gemini", status: "selesai" });
+    await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: user.id, jenis: "naskah", provider: "gemini", status: "selesai" }));
     return { ok: true };
   } catch (e) {
     console.error("generateNaskah gagal", comicId, e);
@@ -91,7 +93,7 @@ export async function generateNaskah(comicId: string): Promise<Result> {
       .from("comics")
       .update({ naskah_status: "error", naskah_error: "Gagal membuat naskah. Kredit sudah dikembalikan, silakan coba lagi." })
       .eq("id", comicId);
-    await admin.from("generations").insert({ user_id: user.id, jenis: "naskah", provider: "gemini", status: "gagal" });
+    await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: user.id, jenis: "naskah", provider: "gemini", status: "gagal" }));
     return { ok: false, error: "Gagal membuat naskah. Kredit sudah dikembalikan, silakan coba lagi." };
   }
 }

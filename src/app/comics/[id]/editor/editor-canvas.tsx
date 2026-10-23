@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Circle, Ellipse, Group, Image as KImage, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 import type Konva from "konva";
-import { Columns2, Copy, Rows2, Shapes, Square, Trash2 } from "lucide-react";
-import { MAX_PANELS_PER_PAGE, panelCorners } from "@/lib/editor/panel-ops";
+import { Check, Columns2, Copy, Maximize, Rows2, Shapes, Square, Trash2 } from "lucide-react";
+import { MAX_PANELS_PER_PAGE, coverRect, panelCorners } from "@/lib/editor/panel-ops";
 import { snapPoint, snapRectMove, snapTargets, type Guides, type SnapTargets } from "@/lib/editor/snap";
+import { layoutKumpulan } from "@/lib/editor/math-elements";
+import { IkonBendaView } from "./ikon-benda";
 import { useEditor } from "@/lib/editor/store";
-import { PAGE_H, PAGE_W, type Bubble, type Panel, type Point } from "@/lib/editor/types";
+import { PAGE_H, PAGE_W, type Bubble, type MathElement, type Panel, type Point } from "@/lib/editor/types";
 
 const FIT_PADDING = 48;
 
@@ -47,6 +49,8 @@ function PanelView({
   trRef,
   generating,
   cornerMode,
+  imageMode,
+  liveImage,
   snapTh,
   onGuides,
 }: {
@@ -54,10 +58,14 @@ function PanelView({
   index: number;
   generating: boolean;
   cornerMode: boolean;
+  /** layer gambar panel ini sedang diedit */
+  imageMode: boolean;
+  /** posisi gambar sementara saat sedang diseret/diubah ukurannya */
+  liveImage: { x: number; y: number; w: number; h: number } | null;
   snapTh: number;
   onGuides: (g: Guides | null) => void;
   selected: boolean;
-  tool: "move" | "text";
+  tool: "move" | "text" | "mat";
   onSelect: () => void;
   onTextTool: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void;
   onDragState: (dragging: boolean) => void;
@@ -69,13 +77,14 @@ function PanelView({
   const movePanel = useEditor((s) => s.movePanel);
   const resizePanel = useEditor((s) => s.resizePanel);
   const targets = useRef<SnapTargets | null>(null);
+  const selectImage = useEditor((s) => s.selectImage);
 
   useEffect(() => {
-    if (selected && !cornerMode && ref.current && trRef.current) {
+    if (selected && !cornerMode && !imageMode && ref.current && trRef.current) {
       trRef.current.nodes([ref.current]);
       trRef.current.getLayer()?.batchDraw();
     }
-  }, [selected, cornerMode, trRef, panel.w, panel.h, panel.x, panel.y]);
+  }, [selected, cornerMode, imageMode, trRef, panel.w, panel.h, panel.x, panel.y]);
 
   if (!panel.visible) return null;
   // titik-titik poligon relatif terhadap pojok kotak pembatas (posisi grup)
@@ -90,7 +99,8 @@ function PanelView({
         },
       }
     : { clipX: 0, clipY: 0, clipWidth: panel.w, clipHeight: panel.h };
-  const klik = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => (tool === "text" ? onTextTool(e) : onSelect());
+  // alat Teks dan Elemen Mat menaruh objek baru di titik klik; alat Pilih memilih panel
+  const klik = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => (tool === "move" ? onSelect() : onTextTool(e));
 
   return (
     <Group
@@ -99,9 +109,11 @@ function PanelView({
       y={panel.y}
       {...clip}
       // panel baru bisa diseret setelah dipilih, supaya klik biasa tidak menggesernya tanpa sengaja
-      draggable={tool === "move" && selected && !cornerMode}
+      draggable={tool === "move" && selected && !cornerMode && !imageMode}
       onClick={klik}
       onTap={klik}
+      onDblClick={() => panel.imageUrl && tool === "move" && selectImage(panel.id)}
+      onDblTap={() => panel.imageUrl && tool === "move" && selectImage(panel.id)}
       onDragStart={() => {
         onDragState(true);
         const st = useEditor.getState();
@@ -140,7 +152,16 @@ function PanelView({
       }}
     >
       <Rect width={panel.w} height={panel.h} fill="#eef0f3" />
-      {img && <KImage image={img} width={panel.w} height={panel.h} crop={coverCrop(img, panel.w, panel.h)} />}
+      {img &&
+        (() => {
+          const r = liveImage ?? panel.imageRect;
+          // posisi gambar yang diatur guru, atau otomatis memenuhi panel
+          return r ? (
+            <KImage image={img} x={r.x - panel.x} y={r.y - panel.y} width={r.w} height={r.h} />
+          ) : (
+            <KImage image={img} width={panel.w} height={panel.h} crop={coverCrop(img, panel.w, panel.h)} />
+          );
+        })()}
       {(!img || generating) && (
         <>
           {img && <Rect width={panel.w} height={panel.h} fill="#ffffff" opacity={0.7} listening={false} />}
@@ -162,6 +183,148 @@ function PanelView({
         <Rect width={panel.w} height={panel.h} stroke="#111" strokeWidth={6} listening={false} />
       )}
     </Group>
+  );
+}
+
+/** Elemen "kumpulan benda": ikon vektor sejumlah tepat `jumlah`, disusun per `kolom`. */
+function ElementView({
+  el,
+  selected,
+  draggable,
+  offset,
+  onSelect,
+  onDragState,
+  trRef,
+}: {
+  el: MathElement;
+  selected: boolean;
+  draggable: boolean;
+  offset: { dx: number; dy: number };
+  onSelect: () => void;
+  onDragState: (dragging: boolean) => void;
+  trRef: React.RefObject<Konva.Transformer | null>;
+}) {
+  const update = useEditor((s) => s.updateElement);
+  const ref = useRef<Konva.Group>(null);
+
+  useEffect(() => {
+    if (selected && ref.current && trRef.current) {
+      trRef.current.nodes([ref.current]);
+      trRef.current.getLayer()?.batchDraw();
+    }
+  }, [selected, trRef, el.w, el.h, el.x, el.y]);
+
+  if (!el.visible) return null;
+  return (
+    <Group
+      ref={ref}
+      x={el.x + offset.dx}
+      y={el.y + offset.dy}
+      draggable={draggable}
+      onClick={onSelect}
+      onTap={onSelect}
+      onDragStart={() => {
+        onSelect();
+        onDragState(true);
+      }}
+      onDragEnd={(e) => {
+        onDragState(false);
+        update(el.id, { x: Math.round(e.target.x()), y: Math.round(e.target.y()) });
+      }}
+      onTransformEnd={() => {
+        const node = ref.current;
+        if (!node) return;
+        const w = Math.max(40, Math.round(el.w * node.scaleX()));
+        const h = Math.max(40, Math.round(el.h * node.scaleY()));
+        node.scale({ x: 1, y: 1 });
+        update(el.id, { x: Math.round(node.x()), y: Math.round(node.y()), w, h });
+      }}
+    >
+      {/* bidang transparan agar seluruh kotak elemen bisa diklik dan diseret */}
+      <Rect width={el.w} height={el.h} fill="#ffffff" opacity={0.01} />
+      {layoutKumpulan(el).map((pos, i) => (
+        <IkonBendaView key={i} ikon={el.ikon} x={pos.x} y={pos.y} size={pos.size} />
+      ))}
+    </Group>
+  );
+}
+
+/**
+ * Mode edit gambar: gambar utuh ditampilkan pudar (bagian di luar panel terlihat), bisa diseret dan
+ * diubah ukurannya dari sudut dengan rasio tetap. Gambar di dalam panel mengikuti secara langsung.
+ */
+function ImageEditor({
+  panel,
+  scale,
+  onLive,
+}: {
+  panel: Panel;
+  scale: number;
+  onLive: (r: { x: number; y: number; w: number; h: number } | null) => void;
+}) {
+  const img = useImage(panel.imageUrl);
+  const setImageRect = useEditor((s) => s.setImageRect);
+  const ref = useRef<Konva.Image>(null);
+  const trRef = useRef<Konva.Transformer>(null);
+
+  useEffect(() => {
+    if (img && ref.current && trRef.current) {
+      trRef.current.nodes([ref.current]);
+      trRef.current.getLayer()?.batchDraw();
+    }
+  }, [img, panel.imageRect]);
+
+  if (!img) return null;
+  const r = panel.imageRect ?? coverRect(panel, img.width, img.height);
+  const baca = () => {
+    const n = ref.current!;
+    return { x: n.x(), y: n.y(), w: n.width() * n.scaleX(), h: n.height() * n.scaleY() };
+  };
+
+  return (
+    <>
+      <KImage
+        ref={ref}
+        image={img}
+        x={r.x}
+        y={r.y}
+        width={r.w}
+        height={r.h}
+        opacity={0.45}
+        draggable
+        onMouseEnter={(e) => {
+          const stage = e.target.getStage();
+          if (stage) stage.container().style.cursor = "move";
+        }}
+        onMouseLeave={(e) => {
+          const stage = e.target.getStage();
+          if (stage) stage.container().style.cursor = "";
+        }}
+        onDragMove={() => onLive(baca())}
+        onTransform={() => onLive(baca())}
+        onDragEnd={() => {
+          setImageRect(panel.id, baca());
+          onLive(null);
+        }}
+        onTransformEnd={() => {
+          const hasil = baca();
+          ref.current!.scale({ x: 1, y: 1 });
+          setImageRect(panel.id, hasil);
+          onLive(null);
+        }}
+      />
+      <Transformer
+        ref={trRef}
+        rotateEnabled={false}
+        keepRatio
+        enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right"]}
+        borderStroke="#2563eb"
+        anchorStroke="#2563eb"
+        anchorSize={10}
+        anchorCornerRadius={5}
+        boundBoxFunc={(oldBox, newBox) => (newBox.width < 40 * scale || newBox.height < 40 * scale ? oldBox : newBox)}
+      />
+    </>
   );
 }
 
@@ -370,10 +533,12 @@ export default function EditorCanvas({ fontFamily, generating = false }: { fontF
   const wrapRef = useRef<HTMLDivElement>(null);
   const trRef = useRef<Konva.Transformer>(null);
   const panelTrRef = useRef<Konva.Transformer>(null);
+  const elTrRef = useRef<Konva.Transformer>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [, setFontTick] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [guides, setGuides] = useState<Guides | null>(null);
+  const [liveImage, setLiveImage] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const page = useEditor((s) => s.pages.find((p) => p.id === s.activePageId));
   const selectedId = useEditor((s) => s.selectedId);
@@ -390,6 +555,11 @@ export default function EditorCanvas({ fontFamily, generating = false }: { fontF
   const cornerEdit = useEditor((s) => s.cornerEdit);
   const setCornerEdit = useEditor((s) => s.setCornerEdit);
   const resetCorners = useEditor((s) => s.resetCorners);
+  const selectedLayer = useEditor((s) => s.selectedLayer);
+  const addKumpulan = useEditor((s) => s.addKumpulan);
+  const duplicateElement = useEditor((s) => s.duplicateElement);
+  const deleteElement = useEditor((s) => s.deleteElement);
+  const setImageRect = useEditor((s) => s.setImageRect);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -407,12 +577,16 @@ export default function EditorCanvas({ fontFamily, generating = false }: { fontF
 
   const selPanel = page?.panels.find((p) => p.id === selectedId) ?? null;
   const selBubble = page?.bubbles.find((b) => b.id === selectedId) ?? null;
+  const selElement = page?.elements.find((e) => e.id === selectedId) ?? null;
 
   // lepas Transformer milik jenis yang tidak sedang dipilih
   useEffect(() => {
     if (!selBubble) trRef.current?.nodes([]);
-    if (!selPanel || cornerEdit) panelTrRef.current?.nodes([]);
-  }, [selBubble, selPanel, cornerEdit]);
+    if (!selElement) elTrRef.current?.nodes([]);
+    if (!selPanel || cornerEdit || selectedLayer === "gambar") panelTrRef.current?.nodes([]);
+  }, [selBubble, selElement, selPanel, cornerEdit, selectedLayer]);
+
+  const editGambar = selPanel && selectedLayer === "gambar" && selPanel.imageUrl ? selPanel : null;
 
   if (!page) return null;
 
@@ -422,14 +596,17 @@ export default function EditorCanvas({ fontFamily, generating = false }: { fontF
   const offsetY = Math.max(FIT_PADDING / 2, (size.h - PAGE_H * scale) / 2);
 
   const placeBubble = (panelId: string) => (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    if (tool !== "text") return;
+    if (tool === "move") return;
     const pos = e.target.getStage()?.getPointerPosition();
     if (!pos) return;
-    addBubble(panelId, "bicara", (pos.x - offsetX) / scale, (pos.y - offsetY) / scale);
+    const cx = (pos.x - offsetX) / scale;
+    const cy = (pos.y - offsetY) / scale;
+    if (tool === "mat") addKumpulan(panelId, cx, cy);
+    else addBubble(panelId, "bicara", cx, cy);
   };
 
   // toolbar mengambang di atas elemen terpilih (di bawahnya bila tidak ada ruang di atas)
-  const sel = selPanel ?? selBubble;
+  const sel = selPanel ?? selBubble ?? selElement;
   const toolbar =
     sel && tool === "move" && !dragging
       ? (() => {
@@ -443,7 +620,7 @@ export default function EditorCanvas({ fontFamily, generating = false }: { fontF
   const tbBtn = "grid h-8 w-8 place-items-center rounded-lg hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-30";
 
   return (
-    <div ref={wrapRef} className="relative h-full w-full overflow-auto" style={{ cursor: tool === "text" ? "crosshair" : "default" }}>
+    <div ref={wrapRef} className="relative h-full w-full overflow-auto" style={{ cursor: tool === "move" ? "default" : "crosshair" }}>
       <Stage
         width={Math.max(size.w, PAGE_W * scale + offsetX * 2)}
         height={Math.max(size.h, PAGE_H * scale + offsetY * 2)}
@@ -460,6 +637,8 @@ export default function EditorCanvas({ fontFamily, generating = false }: { fontF
               index={i}
               generating={generating}
               cornerMode={cornerEdit === p.id}
+              imageMode={editGambar?.id === p.id}
+              liveImage={editGambar?.id === p.id ? liveImage : null}
               snapTh={8 / scale}
               onGuides={setGuides}
               selected={p.id === selectedId}
@@ -470,6 +649,29 @@ export default function EditorCanvas({ fontFamily, generating = false }: { fontF
               trRef={panelTrRef}
             />
           ))}
+          {page.elements.map((el) => (
+            <ElementView
+              key={el.id}
+              el={el}
+              selected={el.id === selectedId}
+              draggable={tool === "move"}
+              offset={drag && drag.panelId === el.panelId ? drag : { dx: 0, dy: 0 }}
+              onSelect={() => tool === "move" && select(el.id)}
+              onDragState={setDragging}
+              trRef={elTrRef}
+            />
+          ))}
+          <Transformer
+            ref={elTrRef}
+            rotateEnabled={false}
+            keepRatio={false}
+            borderStroke="#7c3aed"
+            anchorStroke="#7c3aed"
+            anchorSize={10}
+            enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right", "middle-left", "middle-right", "top-center", "bottom-center"]}
+          />
+          {/* gambar yang sedang diatur berada di bawah balon agar teks tetap terbaca */}
+          {editGambar && <ImageEditor key={`${editGambar.id}-${editGambar.imageUrl}`} panel={editGambar} scale={scale} onLive={setLiveImage} />}
           {page.bubbles.map((b) => (
             <BubbleView
               key={b.id}
@@ -513,11 +715,27 @@ export default function EditorCanvas({ fontFamily, generating = false }: { fontF
       {toolbar && sel && (
         <div
           role="toolbar"
-          aria-label={selPanel ? "Aksi panel" : "Aksi balon"}
+          aria-label={editGambar ? "Aksi gambar" : selPanel ? "Aksi panel" : selElement ? "Aksi elemen" : "Aksi balon"}
           className="absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-line bg-surface p-1 shadow-lg"
           style={{ left: toolbar.left, top: toolbar.top }}
         >
-          {selPanel ? (
+          {editGambar ? (
+            <>
+              <span className="px-2 text-xs font-medium text-gray-600">Gambar</span>
+              <button
+                type="button"
+                title="Sesuaikan gambar ke panel"
+                aria-label="Sesuaikan gambar ke panel"
+                onClick={() => setImageRect(editGambar.id, null)}
+                className={tbBtn}
+              >
+                <Maximize size={17} />
+              </button>
+              <button type="button" title="Selesai mengatur gambar" aria-label="Selesai mengatur gambar" onClick={() => select(editGambar.id)} className={tbBtn}>
+                <Check size={17} />
+              </button>
+            </>
+          ) : selPanel ? (
             <>
               <button
                 type="button"
@@ -572,6 +790,15 @@ export default function EditorCanvas({ fontFamily, generating = false }: { fontF
                 onClick={() => deletePanel(selPanel.id)}
                 className={`${tbBtn} text-danger`}
               >
+                <Trash2 size={17} />
+              </button>
+            </>
+          ) : selElement ? (
+            <>
+              <button type="button" title="Duplikat elemen" aria-label="Duplikat elemen" onClick={() => duplicateElement(selElement.id)} className={tbBtn}>
+                <Copy size={17} />
+              </button>
+              <button type="button" title="Hapus elemen" aria-label="Hapus elemen" onClick={() => deleteElement(selElement.id)} className={`${tbBtn} text-danger`}>
                 <Trash2 size={17} />
               </button>
             </>

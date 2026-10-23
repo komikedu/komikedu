@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { GoogleGenAI } from "@google/genai";
+import { IMAGE_MODEL } from "../src/lib/ai/gemini-image";
 import sharp from "sharp";
 import { GAYA } from "../src/lib/comics/schema";
 import { TOKOH_PRESET } from "../src/lib/comics/tokoh";
@@ -13,7 +14,7 @@ async function main() {
       const out = `public/tokoh/${t.id}-${g.id}.webp`;
       if (existsSync(out)) continue; // bisa dilanjutkan bila terputus
       const res = await ai.models.generateContent({
-        model: "gemini-3.1-flash-image",
+        model: IMAGE_MODEL,
         contents:
           `Potret karakter untuk komik edukasi anak SD Indonesia: ${t.deskripsi}. Setengah badan menghadap depan, tersenyum ramah, ` +
           `gaya ${g.prompt}. Latar belakang polos warna krem muda. Satu karakter saja. Jangan ada teks, huruf, angka, atau logo; bila memegang buku, sampulnya polos tanpa tulisan.`,

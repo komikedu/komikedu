@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { LAYOUTS } from "@/lib/ai/layouts";
-import { PAGE_H, PAGE_W, type Bubble, type EditorPage, type Panel } from "./types";
+import { PAGE_H, PAGE_W, type Bubble, type EditorPage, type MathElement, type Panel } from "./types";
 
 export const MAX_PAGES = 30;
 export const MAX_BUBBLES_PER_PAGE = 40;
@@ -24,6 +24,30 @@ const PanelSchema = z.object({
     .length(4)
     .nullable()
     .optional(),
+  /** posisi gambar yang diatur guru; null/absen = otomatis memenuhi panel */
+  imageRect: z
+    .object({
+      x: z.number().finite().min(-PAGE_W).max(PAGE_W * 2),
+      y: z.number().finite().min(-PAGE_H).max(PAGE_H * 2),
+      w: z.number().finite().min(1).max(PAGE_W * 3),
+      h: z.number().finite().min(1).max(PAGE_H * 3),
+    })
+    .nullable()
+    .optional(),
+});
+
+const ElementSchema = z.object({
+  id: z.string().uuid(),
+  panelId: z.string().uuid(),
+  kind: z.literal("kumpulan"),
+  x: coord(PAGE_W),
+  y: coord(PAGE_H),
+  w: z.number().finite().min(20).max(PAGE_W * 2),
+  h: z.number().finite().min(20).max(PAGE_H * 2),
+  ikon: z.enum(["apel", "jeruk", "kue", "bintang", "kelereng", "pensil"]),
+  jumlah: z.number().int().min(1).max(100),
+  kolom: z.number().int().min(1).max(20),
+  visible: z.boolean(),
 });
 
 const BubbleSchema = z.object({
@@ -51,6 +75,7 @@ export const EditorPayloadSchema = z
       layoutId: z.enum(layoutIds),
       panels: z.array(PanelSchema).min(1).max(12),
       bubbles: z.array(BubbleSchema).max(MAX_BUBBLES_PER_PAGE),
+      elements: z.array(ElementSchema).max(30).default([]),
     }),
   )
   .min(1)
@@ -59,7 +84,7 @@ export const EditorPayloadSchema = z
     const seen = new Set<string>();
     pages.forEach((p, pi) => {
       const panelIds = new Set(p.panels.map((x) => x.id));
-      for (const id of [p.id, ...p.panels.map((x) => x.id), ...p.bubbles.map((x) => x.id)]) {
+      for (const id of [p.id, ...p.panels.map((x) => x.id), ...p.bubbles.map((x) => x.id), ...p.elements.map((x) => x.id)]) {
         if (seen.has(id)) ctx.addIssue({ code: "custom", message: "id ganda", path: [pi] });
         seen.add(id);
       }
@@ -68,12 +93,21 @@ export const EditorPayloadSchema = z
           ctx.addIssue({ code: "custom", message: "balon menunjuk panel di halaman lain", path: [pi, "bubbles", bi] });
         }
       });
+      p.elements.forEach((e, ei) => {
+        if (!panelIds.has(e.panelId)) {
+          ctx.addIssue({ code: "custom", message: "elemen menunjuk panel di halaman lain", path: [pi, "elements", ei] });
+        }
+      });
     });
   });
 
 export type EditorRows = {
   pages: { id: string; comic_id: string; urutan: number; template_layout: string }[];
-  panels: { id: string; page_id: string; urutan: number; posisi: { x: number; y: number; w: number; h: number; corners?: { x: number; y: number }[] }; tampil: boolean; adegan: string }[];
+  panels: { id: string; page_id: string; urutan: number; posisi: { x: number; y: number; w: number; h: number; corners?: { x: number; y: number }[]; gambar?: { x: number; y: number; w: number; h: number } };
+    tampil: boolean;
+    adegan: string;
+    math_elements_json: ElementRow[];
+  }[];
   bubbles: {
     id: string;
     panel_id: string;
@@ -92,9 +126,13 @@ export type EditorRows = {
 export type SavablePage = {
   id: string;
   layoutId: string;
-  panels: Pick<Panel, "id" | "x" | "y" | "w" | "h" | "visible" | "adegan" | "corners">[];
+  panels: Pick<Panel, "id" | "x" | "y" | "w" | "h" | "visible" | "adegan" | "corners" | "imageRect">[];
   bubbles: Bubble[];
+  elements: MathElement[];
 };
+
+/** Elemen matematika disimpan per panel di kolom panels.math_elements_json. */
+export type ElementRow = Omit<MathElement, "panelId" | "visible"> & { tampil: boolean };
 
 export function toRows(comicId: string, pages: SavablePage[]): EditorRows {
   const rows: EditorRows = { pages: [], panels: [], bubbles: [] };
@@ -105,9 +143,15 @@ export function toRows(comicId: string, pages: SavablePage[]): EditorRows {
         id: p.id,
         page_id: page.id,
         urutan: i + 1,
-        posisi: { x: p.x, y: p.y, w: p.w, h: p.h, ...(p.corners ? { corners: p.corners } : {}) },
+        posisi: { x: p.x, y: p.y, w: p.w, h: p.h, ...(p.corners ? { corners: p.corners } : {}), ...(p.imageRect ? { gambar: p.imageRect } : {}) },
         tampil: p.visible,
         adegan: p.adegan,
+        math_elements_json: page.elements
+          .filter((e) => e.panelId === p.id)
+          .map(({ panelId: _p, visible, ...e }) => {
+            void _p;
+            return { ...e, tampil: visible };
+          }),
       }),
     );
     page.bubbles.forEach((b, i) =>
@@ -138,9 +182,10 @@ export type NestedPage = {
     urutan: number;
     script_json: { adegan?: string } | null;
     image_url: string | null;
-    posisi: { x: number; y: number; w: number; h: number; corners?: { x: number; y: number }[] } | null;
+    posisi: { x: number; y: number; w: number; h: number; corners?: { x: number; y: number }[]; gambar?: { x: number; y: number; w: number; h: number } } | null;
     tampil: boolean;
     adegan: string | null;
+    math_elements_json?: ElementRow[] | null;
     bubbles: {
       id: string;
       jenis: string;
@@ -160,20 +205,23 @@ export function fromNested(rows: NestedPage[]): EditorPage[] {
     .sort((a, b) => a.urutan - b.urutan)
     .map((page) => {
       const panels: Panel[] = [];
+      const elements: MathElement[] = [];
       const bubbles: (Bubble & { _o: number; _p: number })[] = [];
       [...page.panels]
         .sort((a, b) => a.urutan - b.urutan)
         .forEach((p, pIdx) => {
-          const { corners, ...pos } = p.posisi ?? { x: 0, y: 0, w: PAGE_W, h: PAGE_H };
+          const { corners, gambar, ...pos } = p.posisi ?? { x: 0, y: 0, w: PAGE_W, h: PAGE_H };
           panels.push({
             id: p.id,
             ...pos,
             ...(corners?.length === 4 ? { corners } : {}),
+            ...(gambar ? { imageRect: gambar } : {}),
             imageUrl: p.image_url,
             visible: p.tampil,
             // kolom adegan (hasil edit di editor) didahulukan, lalu adegan asli dari naskah
             adegan: p.adegan ?? p.script_json?.adegan ?? "",
           });
+          for (const { tampil, ...e } of p.math_elements_json ?? []) elements.push({ ...e, panelId: p.id, visible: tampil });
           for (const b of p.bubbles) {
             bubbles.push({
               id: b.id,
@@ -198,6 +246,7 @@ export function fromNested(rows: NestedPage[]): EditorPage[] {
         id: page.id,
         layoutId: page.template_layout ?? LAYOUTS[0].id,
         panels,
+        elements,
         bubbles: bubbles.map(({ _o, _p, ...b }) => {
           void _o;
           void _p;

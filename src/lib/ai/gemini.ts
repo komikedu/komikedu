@@ -1,6 +1,7 @@
 import "server-only";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
+import { catatPemakaian } from "./usage";
 
 export const MODEL_LITE = "gemini-3.5-flash-lite";
 export const MODEL_FLASH = "gemini-3.5-flash";
@@ -44,13 +45,7 @@ export async function generateJson<T extends z.ZodType>(
       },
     }),
   );
-  console.info(
-    JSON.stringify({
-      ai: "gemini",
-      model,
-      tokens: res.usageMetadata?.totalTokenCount,
-      ms: Date.now() - started,
-    }),
-  );
+  const pakai = catatPemakaian(model, res.usageMetadata);
+  console.info(JSON.stringify({ ai: "gemini", ...pakai, ms: Date.now() - started }));
   return schema.parse(JSON.parse(res.text ?? ""));
 }

@@ -4,10 +4,10 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Apple,
   ChevronDown,
   Eye,
   EyeOff,
-  Hand,
   Home,
   MousePointer2,
   Plus,
@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import { LAYOUTS } from "@/lib/ai/layouts";
 import { MAX_PANELS_PER_PAGE } from "@/lib/editor/panel-ops";
-import { applyPanelImages, clearHistory, redo, selectSelectedBubble, selectSelectedPanel, undo, useEditor } from "@/lib/editor/store";
+import { IKON_BENDA, MAX_JUMLAH, MAX_KOLOM, namaIkon } from "@/lib/editor/math-elements";
+import { applyPanelImages, clearHistory, redo, selectSelectedBubble, selectSelectedElement, selectSelectedPanel, undo, useEditor } from "@/lib/editor/store";
 import type { BubbleKind, EditorPage } from "@/lib/editor/types";
 
 const EditorCanvas = dynamic(() => import("./editor-canvas"), {
@@ -115,6 +116,9 @@ function PagesPanel() {
 
 function LayersPanel() {
   const page = useEditor((s) => s.pages.find((p) => p.id === s.activePageId));
+  const selectedLayer = useEditor((s) => s.selectedLayer);
+  const selectImage = useEditor((s) => s.selectImage);
+  const updateElement = useEditor((s) => s.updateElement);
   const selectedId = useEditor((s) => s.selectedId);
   const select = useEditor((s) => s.select);
   const update = useEditor((s) => s.updateBubble);
@@ -129,9 +133,9 @@ function LayersPanel() {
             <button
               type="button"
               onClick={() => select(panel.id)}
-              aria-current={panel.id === selectedId}
+              aria-current={panel.id === selectedId && selectedLayer === "panel"}
               className={`flex w-full items-center gap-1 rounded-md px-1 py-1 text-left text-sm font-medium ${
-                panel.id === selectedId ? "bg-blue-600 text-white" : "hover:bg-surface-muted"
+                panel.id === selectedId && selectedLayer === "panel" ? "bg-blue-600 text-white" : "hover:bg-surface-muted"
               }`}
             >
               <ChevronDown size={14} /> Panel {i + 1}
@@ -158,7 +162,43 @@ function LayersPanel() {
                     </div>
                   </li>
                 ))}
-              <li className="px-2 py-1 text-xs text-gray-500">{panel.imageUrl ? "Gambar" : "Gambar: belum dibuat"}</li>
+              {page.elements
+                .filter((e) => e.panelId === panel.id)
+                .map((e) => (
+                  <li key={e.id}>
+                    <div className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs ${e.id === selectedId ? "bg-violet-600 text-white" : "hover:bg-surface-muted"}`}>
+                      <button
+                        type="button"
+                        aria-label={e.visible ? "Sembunyikan elemen" : "Tampilkan elemen"}
+                        onClick={() => updateElement(e.id, { visible: !e.visible })}
+                      >
+                        {e.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                      </button>
+                      <button type="button" onClick={() => select(e.id)} className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left">
+                        <Apple size={13} className="shrink-0" />
+                        {e.jumlah} {namaIkon(e.ikon)}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              <li>
+                {panel.imageUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => selectImage(panel.id)}
+                    title="Geser atau ubah ukuran gambar"
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
+                      panel.id === selectedId && selectedLayer === "gambar" ? "bg-blue-600 text-white" : "hover:bg-surface-muted"
+                    }`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={panel.imageUrl} alt="" className="h-6 w-6 rounded object-cover" />
+                    Gambar
+                  </button>
+                ) : (
+                  <span className="block px-2 py-1 text-xs text-gray-500">Gambar: belum dibuat</span>
+                )}
+              </li>
             </ul>
           </li>
         ))}
@@ -261,6 +301,7 @@ function PanelTab() {
         <h3 className="font-semibold">Panel {nomor}</h3>
         <p className="mt-1 text-xs text-gray-500">
           {Math.round(panel.w)} x {Math.round(panel.h)} · seret untuk memindah, tarik sudut untuk mengubah ukuran
+          {panel.imageUrl && " · klik dua kali untuk mengatur gambar"}
         </p>
       </div>
       <div>
@@ -293,13 +334,88 @@ function PanelTab() {
   );
 }
 
+function ElementTab() {
+  const el = useEditor(selectSelectedElement);
+  const update = useEditor((s) => s.updateElement);
+  const del = useEditor((s) => s.deleteElement);
+  if (!el) return null;
+  const angka = (v: string, max: number) => Math.max(1, Math.min(max, Math.floor(Number(v) || 1)));
+
+  return (
+    <div className="space-y-4 p-4 text-sm">
+      <div>
+        <h3 className="font-semibold">Kumpulan benda</h3>
+        <p className="mt-1 text-xs text-gray-500">Digambar dari angka, bukan oleh AI, jadi jumlahnya selalu tepat.</p>
+      </div>
+      <div>
+        <span className="font-semibold">Benda</span>
+        <div className="mt-1 grid grid-cols-3 gap-2">
+          {IKON_BENDA.map((i) => (
+            <button
+              key={i.id}
+              type="button"
+              aria-pressed={el.ikon === i.id}
+              onClick={() => update(el.id, { ikon: i.id })}
+              className={`rounded-lg border px-2 py-2 text-xs ${el.ikon === i.id ? "border-violet-600 bg-violet-600 text-white" : "border-line hover:bg-surface-muted"}`}
+            >
+              {i.nama}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label htmlFor="jumlah-benda" className="font-semibold">
+          Jumlah
+        </label>
+        <div className="mt-1 flex items-center gap-2">
+          <button type="button" aria-label="Kurangi" onClick={() => update(el.id, { jumlah: Math.max(1, el.jumlah - 1) })} className="h-9 w-9 rounded-lg border border-line text-lg hover:bg-surface-muted">
+            −
+          </button>
+          <input
+            id="jumlah-benda"
+            type="number"
+            min={1}
+            max={MAX_JUMLAH}
+            value={el.jumlah}
+            onChange={(e) => update(el.id, { jumlah: angka(e.target.value, MAX_JUMLAH) })}
+            className="h-9 w-20 rounded-lg border border-line px-2 text-center"
+          />
+          <button type="button" aria-label="Tambah" onClick={() => update(el.id, { jumlah: Math.min(MAX_JUMLAH, el.jumlah + 1) })} className="h-9 w-9 rounded-lg border border-line text-lg hover:bg-surface-muted">
+            +
+          </button>
+        </div>
+      </div>
+      <div>
+        <label htmlFor="kolom-benda" className="font-semibold">
+          Per baris
+        </label>
+        <input
+          id="kolom-benda"
+          type="number"
+          min={1}
+          max={MAX_KOLOM}
+          value={el.kolom}
+          onChange={(e) => update(el.id, { kolom: angka(e.target.value, MAX_KOLOM) })}
+          className="mt-1 h-9 w-20 rounded-lg border border-line px-2 text-center"
+        />
+        <p className="mt-1 text-xs text-gray-500">Mis. 10 benda, 5 per baris = 2 baris. Cocok untuk perkalian dan pengelompokan.</p>
+      </div>
+      <button type="button" onClick={() => del(el.id)} className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-danger hover:bg-surface-muted">
+        <Trash2 size={14} /> Hapus elemen
+      </button>
+    </div>
+  );
+}
+
 function LayerTab() {
+  const element = useEditor(selectSelectedElement);
   const panel = useEditor(selectSelectedPanel);
   const bubble = useEditor(selectSelectedBubble);
   const update = useEditor((s) => s.updateBubble);
   const del = useEditor((s) => s.deleteBubble);
+  if (element) return <ElementTab />;
   if (panel) return <PanelTab />;
-  if (!bubble) return <p className="p-4 text-sm text-gray-500">Pilih panel atau balon di kanvas untuk mengubahnya.</p>;
+  if (!bubble) return <p className="p-4 text-sm text-gray-500">Pilih panel, balon, atau elemen di kanvas untuk mengubahnya.</p>;
 
   return (
     <div className="space-y-4 p-4 text-sm">
@@ -605,11 +721,16 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
         e.preventDefault();
         const st = useEditor.getState();
         const isPanel = st.pages.some((p) => p.id === st.activePageId && p.panels.some((x) => x.id === selectedId));
+        if (isPanel && st.selectedLayer === "gambar") return; // gambar dibuat server, tidak dihapus dari sini
         if (isPanel) st.deletePanel(selectedId);
+        else if (st.pages.some((p) => p.id === st.activePageId && p.elements.some((x) => x.id === selectedId))) st.deleteElement(selectedId);
         else del(selectedId);
       } else if (e.key === "Escape") {
         setTool("move");
-        useEditor.getState().setCornerEdit(null);
+        const st = useEditor.getState();
+        st.setCornerEdit(null);
+        // keluar dari mode gambar kembali ke panelnya
+        if (st.selectedLayer === "gambar" && st.selectedId) st.select(st.selectedId);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -664,8 +785,8 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
           <ToolButton label="Teks" active={tool === "text"} onClick={() => setTool("text")}>
             <Type size={18} />
           </ToolButton>
-          <ToolButton label="Elemen Mat" disabled>
-            <Hand size={18} />
+          <ToolButton label="Elemen Mat" active={tool === "mat"} onClick={() => setTool("mat")}>
+            <Apple size={18} />
           </ToolButton>
           <span className="mx-1 h-8 w-px bg-line" />
           <ToolButton label="Undo" onClick={undo}>
@@ -675,9 +796,9 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
             <Redo2 size={18} />
           </ToolButton>
         </div>
-        {tool === "text" && (
+        {tool !== "move" && (
           <p role="status" className="absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/80 px-3 py-1 text-xs text-white">
-            Klik di dalam panel untuk menaruh balon. Esc untuk batal.
+            {tool === "text" ? "Klik di dalam panel untuk menaruh balon." : "Klik di dalam panel untuk menaruh kumpulan benda (jumlah pasti)."} Esc untuk batal.
           </p>
         )}
 

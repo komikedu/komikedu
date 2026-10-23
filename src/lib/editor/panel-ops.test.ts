@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createBubble, createPage, PAGE_MARGIN } from "./factory";
-import { EditorPayloadSchema } from "./persist";
-import { MAX_PANELS_PER_PAGE, MIN_PANEL, PANEL_GAP, deletePanel, duplicateBubble, duplicatePanel, movePanel, resizePanel, splitPanel } from "./panel-ops";
+import { EditorPayloadSchema, fromNested, toRows } from "./persist";
+import { MAX_PANELS_PER_PAGE, MIN_PANEL, PANEL_GAP, coverRect, deletePanel, duplicateBubble, duplicatePanel, movePanel, resizePanel, splitPanel } from "./panel-ops";
 import { applyPanelImages, clearHistory, undo, useEditor } from "./store";
 import { PAGE_H, PAGE_W, type EditorPage } from "./types";
 
@@ -219,5 +219,71 @@ describe("isiPanelKosong", () => {
     undo();
     expect(page().panels[1].adegan).toBe("");
     expect(page().bubbles.length).toBe(balonAwal);
+  });
+});
+
+describe("gambar di dalam panel", () => {
+  const st = () => useEditor.getState();
+  const page = () => st().pages.find((p) => p.id === st().activePageId)!;
+
+  beforeEach(() => {
+    st().init([halaman()]);
+    clearHistory();
+  });
+
+  it("coverRect memenuhi panel tanpa gepeng", () => {
+    const r = coverRect({ x: 100, y: 100, w: 400, h: 200 }, 800, 800);
+    expect(r).toEqual({ x: 100, y: 0, w: 400, h: 400 }); // gambar persegi pada panel lebar: lebar pas, tinggi melebihi
+  });
+
+  it("memilih layer gambar, mengatur posisi, lalu undo", () => {
+    const p = page().panels[0];
+    st().selectImage(p.id);
+    expect(st().selectedLayer).toBe("gambar");
+    expect(st().selectedId).toBe(p.id);
+    st().setImageRect(p.id, { x: 10, y: 20, w: 1200, h: 800 });
+    expect(page().panels[0].imageRect).toEqual({ x: 10, y: 20, w: 1200, h: 800 });
+    undo();
+    expect(page().panels[0].imageRect ?? null).toBeNull();
+    st().select(p.id);
+    expect(st().selectedLayer).toBe("panel");
+  });
+
+  it("geser panel membawa gambarnya; duplikat menyalin posisi gambar", () => {
+    const p = page().panels[0];
+    st().setImageRect(p.id, { x: p.x, y: p.y, w: 900, h: 600 });
+    st().movePanel(p.id, 30, 40);
+    const geser = page().panels[0];
+    expect(geser.imageRect).toMatchObject({ x: geser.x, y: geser.y });
+    st().duplicatePanel(geser.id);
+    const salinan = page().panels[1];
+    expect(salinan.imageRect).toMatchObject({ x: salinan.x, y: salinan.y, w: 900, h: 600 });
+  });
+
+  it("gambar baru dari generate mereset posisi gambar lama", () => {
+    const p = page().panels[0];
+    st().setImageRect(p.id, { x: 0, y: 0, w: 500, h: 500 });
+    applyPanelImages({ [p.id]: "https://contoh.supabase.co/baru.webp" });
+    expect(page().panels[0]).toMatchObject({ imageUrl: "https://contoh.supabase.co/baru.webp", imageRect: null });
+  });
+
+  it("posisi gambar tersimpan dan dimuat ulang", () => {
+    const p = page().panels[0];
+    st().setImageRect(p.id, { x: -50, y: 10, w: 1300, h: 900 });
+    const data = JSON.parse(JSON.stringify(st().pages));
+    const parsed = EditorPayloadSchema.safeParse(data);
+    expect(parsed.success).toBe(true);
+    const rows = toRows("c1", parsed.success ? parsed.data : []);
+    expect(rows.panels[0].posisi.gambar).toEqual({ x: -50, y: 10, w: 1300, h: 900 });
+    const [back] = fromNested([
+      {
+        id: page().id,
+        urutan: 1,
+        template_layout: page().layoutId,
+        panels: rows.panels.map((r) => ({ id: r.id, urutan: r.urutan, script_json: null, image_url: null, posisi: r.posisi, tampil: r.tampil, adegan: r.adegan, bubbles: [] })),
+      },
+    ]);
+    expect(back.panels[0].imageRect).toEqual({ x: -50, y: 10, w: 1300, h: 900 });
+    expect(back.panels[1].imageRect).toBeUndefined();
   });
 });

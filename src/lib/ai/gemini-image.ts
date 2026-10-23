@@ -2,10 +2,11 @@ import "server-only";
 import { GoogleGenAI } from "@google/genai";
 import type { ImageProvider, PageImageRequest, PageImageResult } from "./image-provider";
 import { buildPagePrompt } from "./page-prompt";
+import { catatPemakaian } from "./usage";
 
 export { buildPagePrompt };
 
-export const IMAGE_MODEL = "gemini-3.1-flash-image"; // Nano Banana 2
+export const IMAGE_MODEL = "gemini-nano-banana-2.1"; // Nano Banana 2.1, setengah harga Nano Banana 2 per gambar
 export const IMAGE_MODEL_PREMIUM = "gemini-3-pro-image"; // Nano Banana Pro
 
 const RETRYABLE = new Set([500, 503]); // 429 pada gambar = kuota habis, bukan sementara
@@ -37,11 +38,10 @@ export class GeminiImageProvider implements ImageProvider {
           contents: [{ role: "user", parts }],
           config: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } },
         });
+        const pakai = catatPemakaian(model, res.usageMetadata);
         const img = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
         if (!img?.data) throw new Error("Model tidak mengembalikan gambar (kemungkinan diblokir moderasi)");
-        console.info(
-          JSON.stringify({ ai: "gemini-image", model, tokens: res.usageMetadata?.totalTokenCount, ms: Date.now() - started }),
-        );
+        console.info(JSON.stringify({ ai: "gemini-image", ...pakai, ms: Date.now() - started }));
         return {
           image: new Uint8Array(Buffer.from(img.data, "base64")),
           mimeType: img.mimeType ?? "image/png",

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { checkScript } from "./check";
 import { jumlahBendaDiAdegan } from "./jumlah";
+import { flagMemblokir } from "./schemas";
 
 describe("jumlahBendaDiAdegan", () => {
   it("mendeteksi jumlah benda dengan angka maupun huruf", () => {
@@ -16,5 +18,15 @@ describe("jumlahBendaDiAdegan", () => {
 
   it("tidak salah menangkap angka di dalam kata", () => {
     expect(jumlahBendaDiAdegan("Ruang A12 kosong")).toEqual([]);
+  });
+});
+
+describe("checkScript: jumlah-di-gambar", () => {
+  it("memberi saran yang tidak memblokir", () => {
+    const flags = checkScript({
+      halaman: [{ urutan: 1, panel: [{ urutan: 1, adegan: "Sari menghitung 10 apel di meja.", dialog: [], hitungan: [] }] }],
+    } as never);
+    expect(flags.map((f) => f.jenis)).toEqual(["jumlah-di-gambar"]);
+    expect(flags.filter(flagMemblokir)).toEqual([]);
   });
 });

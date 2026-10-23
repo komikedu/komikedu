@@ -1,4 +1,5 @@
 import { verifyClaim } from "@/lib/math/verify";
+import { jumlahBendaDiAdegan } from "./jumlah";
 import { MAX_BALLOON_WORDS, type Flag, type Script } from "./schemas";
 
 const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
@@ -10,6 +11,15 @@ export function checkScript(script: Script): Flag[] {
     for (const panel of page.panel) {
       if (!panel.adegan.trim()) {
         flags.push({ halaman: page.urutan, panel: panel.urutan, jenis: "adegan-kosong", alasan: "Adegan panel masih kosong" });
+      }
+      const jumlah = jumlahBendaDiAdegan(panel.adegan);
+      if (jumlah.length) {
+        flags.push({
+          halaman: page.urutan,
+          panel: panel.urutan,
+          jenis: "jumlah-di-gambar",
+          alasan: `Jumlah benda di gambar AI tidak selalu tepat: ${jumlah.join(", ")}. Pakai Elemen Mat untuk jumlah pasti.`,
+        });
       }
       panel.hitungan.forEach((h, i) => {
         const res = verifyClaim({ expression: h.ekspresi, claimed: h.hasilTertulis });

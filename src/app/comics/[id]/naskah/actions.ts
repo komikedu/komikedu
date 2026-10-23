@@ -2,7 +2,7 @@
 
 import { checkScript } from "@/lib/ai/check";
 import { createScript } from "@/lib/ai/pipeline";
-import type { Flag } from "@/lib/ai/schemas";
+import { flagMemblokir, type Flag } from "@/lib/ai/schemas";
 import { barisGenerations, rekamPemakaian, type Pemakaian } from "@/lib/ai/usage";
 import { NASKAH_COST, NaskahEditSchema, uuid } from "@/lib/comics/naskah-edit";
 import { draftErrors } from "@/lib/comics/schema";
@@ -126,7 +126,7 @@ export async function approveNaskah(comicId: string): Promise<Result> {
 
   const parsed = NaskahEditSchema.safeParse(comic.naskah_json);
   if (!parsed.success) return { ok: false, error: "Naskah tersimpan tidak valid" };
-  const flags = checkScript(parsed.data);
+  const flags = checkScript(parsed.data).filter(flagMemblokir);
   if (flags.length) return { ok: false, error: `Masih ada ${flags.length} tanda yang perlu diperbaiki` };
 
   const { pages, panelScripts } = scriptToPages(parsed.data);

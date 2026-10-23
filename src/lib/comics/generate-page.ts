@@ -3,10 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 import { generateCharacterSheet, namaTokoh, type KarakterSheet } from "@/lib/ai/characters";
 import { cropPanels } from "@/lib/ai/crop";
-import { GeminiImageProvider } from "@/lib/ai/gemini-image";
+import { getImageProvider } from "@/lib/ai/image-providers";
+import { kuotaHabis, PESAN_KUOTA } from "@/lib/ai/galat";
 import { barisGenerations, rekamPemakaian, type Pemakaian } from "@/lib/ai/usage";
 import { GAYA } from "@/lib/comics/schema";
-import { gambarTokoh, isPresetId, sheetCocok, type Tokoh } from "@/lib/comics/tokoh";
+import { simpanGambar } from "@/lib/storage/gambar";
+import { potretTokoh, punyaPotret } from "@/lib/comics/referensi-tokoh";
+import { sheetCocok, tambahTokohDariSheet, type Tokoh } from "@/lib/comics/tokoh";
 import { PAGE_H, PAGE_W } from "@/lib/editor/types";
 
 export const GAMBAR_COST = 1;
@@ -20,10 +23,9 @@ type PanelRow = {
 };
 
 export type GenerateResult =
-  | { ok: true; panels: { id: string; imageUrl: string }[]; saldo: number }
+  | { ok: true; panels: { id: string; imageUrl: string }[]; saldo: number; tokoh: Tokoh[]; karakter: KarakterSheet }
   | { ok: false; error: string; status: number };
 
-const provider = new GeminiImageProvider();
 
 /**
  * Buat gambar satu halaman: potong kredit, minta satu gambar untuk semua panel, potong per panel,
@@ -87,7 +89,7 @@ export async function generatePageImage(
 
     // lembar karakter: tokoh pilihan guru dipakai apa adanya; tokoh lain di naskah dibuatkan deskripsi
     // sekali per komik lalu disimpan, agar setiap halaman memakai deskripsi yang sama
-    const tokoh = ((comic.tokoh_json as Tokoh[] | null) ?? []).filter((t) => t.nama && t.deskripsi);
+    let tokoh = ((comic.tokoh_json as Tokoh[] | null) ?? []).filter((t) => t.nama && t.deskripsi);
     let karakter = (comic.karakter_json as KarakterSheet | null) ?? null;
     let refHalaman: string | null = comic.ref_halaman_url;
     // tokoh diganti guru setelah gambar pertama dibuat: susun ulang lembar karakter dan jangan pakai
@@ -109,7 +111,15 @@ export async function generatePageImage(
       await admin.from("comics").update({ karakter_json: karakter }).eq("id", comicId);
     }
 
-    // gambar referensi (maks. 3): potret tokoh preset yang muncul di halaman ini, lalu halaman pertama komik
+    // tokoh dari naskah yang belum ada di daftar (mis. "Siti") ikut masuk tab Tokoh agar bisa diganti guru
+    const tambah = tambahTokohDariSheet(tokoh, karakter);
+    if (tambah.tokoh.length > tokoh.length) {
+      tokoh = tambah.tokoh;
+      karakter = tambah.sheet;
+      await admin.from("comics").update({ tokoh_json: tokoh, karakter_json: karakter }).eq("id", comicId);
+    }
+
+    // gambar referensi (maks. 3): potret tokoh (preset atau buatan AI) yang muncul di halaman ini, lalu halaman pertama komik
     const ambil = async (url: string, label: string) => {
       const r = await fetch(url);
       return r.ok ? { data: new Uint8Array(await r.arrayBuffer()), mimeType: r.headers.get("content-type") ?? "image/webp", label } : null;
@@ -118,11 +128,11 @@ export async function generatePageImage(
       .map((p, i) => [adegan[i], ...(p.script_json?.karakter ?? []), ...(p.script_json?.dialog ?? []).map((d) => d.karakter)].join(" "))
       .join(" ")
       .toLowerCase();
-    const tampil = tokoh.filter((t) => t.preset && isPresetId(t.id) && teksHalaman.includes(t.nama.toLowerCase()));
+    const tampil = tokoh.filter((t) => punyaPotret(t) && teksHalaman.includes(t.nama.toLowerCase()));
     const slotTokoh = refHalaman ? 2 : 3;
     const referenceImages = (
       await Promise.all([
-        ...(assetOrigin ? tampil.slice(0, slotTokoh).map((t) => ambil(`${assetOrigin}${gambarTokoh(t.id, comic.gaya)}`, `potret tokoh ${t.nama}`)) : []),
+        ...tampil.slice(0, slotTokoh).map((t) => potretTokoh(admin, userId, comicId, t, comic.gaya, assetOrigin)),
         ...(refHalaman ? [ambil(refHalaman, "halaman pertama komik ini (ikuti desain tokoh dan gaya gambarnya)")] : []),
       ])
     ).filter((r): r is NonNullable<typeof r> => r !== null);
@@ -132,7 +142,7 @@ export async function generatePageImage(
       return { x: pos.x / PAGE_W, y: pos.y / PAGE_H, w: pos.w / PAGE_W, h: pos.h / PAGE_H };
     });
     const hasil = await rekamPemakaian(pemakaian, () =>
-      provider.generatePage({
+      getImageProvider().generatePage({
         gaya: gaya.prompt,
         karakter,
         referenceImages,
@@ -146,17 +156,17 @@ export async function generatePageImage(
     const uploaded: { id: string; imageUrl: string }[] = [];
     for (let i = 0; i < panels.length; i++) {
       const path = `${base}/${panels[i].id}-${stamp}.webp`;
-      const { error } = await admin.storage.from("panels").upload(path, crops[i].image, { contentType: "image/webp", upsert: true });
-      if (error) throw error;
-      uploaded.push({ id: panels[i].id, imageUrl: admin.storage.from("panels").getPublicUrl(path).data.publicUrl });
+      uploaded.push({ id: panels[i].id, imageUrl: await simpanGambar(admin, path, crops[i].image, "image/webp") });
     }
 
     if (!refHalaman) {
       const full = await sharp(hasil.image).resize({ width: 768 }).webp({ quality: 80 }).toBuffer();
       const path = `${base}/halaman-${pageId}-${stamp}.webp`;
-      const { error } = await admin.storage.from("panels").upload(path, full, { contentType: "image/webp", upsert: true });
-      if (!error) {
-        await admin.from("comics").update({ ref_halaman_url: admin.storage.from("panels").getPublicUrl(path).data.publicUrl }).eq("id", comicId);
+      // halaman referensi hanya membantu konsistensi; gagal menyimpannya tidak menggagalkan gambar
+      try {
+        await admin.from("comics").update({ ref_halaman_url: await simpanGambar(admin, path, full, "image/webp") }).eq("id", comicId);
+      } catch (e) {
+        console.error("simpan halaman referensi gagal", e);
       }
     }
 
@@ -166,19 +176,21 @@ export async function generatePageImage(
     }
     await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "gambar", provider: hasil.provider, status: "selesai" }));
     const { data: profil } = await admin.from("users").select("saldo_kredit").eq("id", userId).single();
-    return { ok: true, panels: uploaded, saldo: profil?.saldo_kredit ?? 0 };
+    return { ok: true, panels: uploaded, saldo: profil?.saldo_kredit ?? 0, tokoh, karakter };
   } catch (e) {
     console.error("generatePageImage gagal", pageId, e);
     await admin.rpc("refund_credits", { p_user: userId, p_amount: GAMBAR_COST, p_alasan: "refund gambar gagal", p_ref: pageId });
     await admin.from("panels").update({ status: "gagal" }).eq("page_id", pageId);
-    await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "gambar", provider: "gemini", status: "gagal" }));
+    await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "gambar", provider: getImageProvider().name, status: "gagal" }));
     const diblokir = e instanceof Error && /diblokir|tidak mengembalikan gambar/i.test(e.message);
     return {
       ok: false,
-      error: diblokir
-        ? "Gambar tidak bisa dibuat untuk adegan ini. Coba ubah deskripsi adegannya. Kredit sudah dikembalikan."
-        : "Gagal membuat gambar. Kredit sudah dikembalikan, silakan coba lagi.",
-      status: 500,
+      error: kuotaHabis(e)
+        ? PESAN_KUOTA
+        : diblokir
+          ? "Gambar tidak bisa dibuat untuk adegan ini. Coba ubah deskripsi adegannya. Kredit sudah dikembalikan."
+          : "Gagal membuat gambar. Kredit sudah dikembalikan, silakan coba lagi.",
+      status: kuotaHabis(e) ? 503 : 500,
     };
   }
 }

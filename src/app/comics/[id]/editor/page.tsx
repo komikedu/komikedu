@@ -1,5 +1,6 @@
 import { Comic_Neue } from "next/font/google";
 import { notFound, redirect } from "next/navigation";
+import type { Tokoh } from "@/lib/comics/tokoh";
 import { createPage } from "@/lib/editor/factory";
 import { fromNested, type NestedPage } from "@/lib/editor/persist";
 import { createClient } from "@/lib/supabase/server";
@@ -15,7 +16,7 @@ export default async function EditorPage({ params }: { params: Promise<{ id: str
   } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=/comics/${id}/editor`);
 
-  const { data: comic } = await supabase.from("comics").select("id, user_id, judul").eq("id", id).maybeSingle();
+  const { data: comic } = await supabase.from("comics").select("id, user_id, judul, gaya, tokoh_json, karakter_json").eq("id", id).maybeSingle();
   if (!comic || comic.user_id !== user.id) notFound();
 
   const [{ data: profil }, { data: rows }] = await Promise.all([
@@ -40,6 +41,9 @@ export default async function EditorPage({ params }: { params: Promise<{ id: str
         fontFamily={comicFont.style.fontFamily}
         initialPages={pages}
         kredit={profil?.saldo_kredit ?? 0}
+        tokoh={(comic.tokoh_json as Tokoh[] | null) ?? []}
+        gaya={comic.gaya}
+        karakter={(comic.karakter_json as { nama: string; deskripsi: string }[] | null) ?? []}
       />
     </div>
   );

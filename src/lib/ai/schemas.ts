@@ -65,7 +65,7 @@ export type Script = z.infer<typeof ScriptSchema>;
 export type Flag = {
   halaman: number;
   panel: number;
-  jenis: "hitungan" | "panjang-balon" | "adegan-kosong" | "balon-kosong";
+  jenis: "hitungan" | "panjang-balon" | "adegan-kosong" | "balon-kosong" | "jumlah-di-gambar";
   alasan: string;
   /** Indeks di panel.hitungan (untuk jenis "hitungan"). */
   hitungan?: number;
@@ -74,3 +74,6 @@ export type Flag = {
   /** Indeks di panel.dialog (untuk jenis "panjang-balon"). */
   dialog?: number;
 };
+
+/** Tanda "jumlah-di-gambar" hanya peringatan; tanda lain harus diperbaiki sebelum naskah disetujui. */
+export const flagMemblokir = (f: Flag) => f.jenis !== "jumlah-di-gambar";

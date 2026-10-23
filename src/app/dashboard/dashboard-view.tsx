@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronRight, LayoutTemplate, Sparkles } from "lucide-react";
 import { createDraft } from "@/app/comics/actions";
+import { PageThumb } from "@/components/page-thumb";
+import { ComicMenu } from "./comic-menu";
 import { nextStep, waktuRelatif, type ComicSummary, type NextStep } from "@/lib/comics/status";
 
 const TONE: Record<NextStep["tone"], string> = {
@@ -18,8 +20,15 @@ function coverColor(id: string) {
   return COVER_COLORS[h % COVER_COLORS.length];
 }
 
-/** Sampul sementara sampai gambar panel tersedia: warna tetap per komik dan judulnya. */
+/** Sampul: thumbnail halaman 1 bila sudah ada gambar, kalau belum warna tetap per komik dan judulnya. */
 function Cover({ comic, small }: { comic: ComicSummary; small?: boolean }) {
+  if (comic.halaman1) {
+    return (
+      <div className={`overflow-hidden rounded-lg ${small ? "h-14 w-11" : "w-full"}`}>
+        <PageThumb halaman={comic.halaman1} />
+      </div>
+    );
+  }
   return (
     <div
       aria-hidden
@@ -108,7 +117,8 @@ export function DashboardView({ nama, comics, now }: { nama: string; comics: Com
             {comics.map((c) => {
               const step = nextStep(c);
               return (
-                <li key={c.id}>
+                <li key={c.id} className="relative">
+                  <ComicMenu id={c.id} judul={c.judul} />
                   <Link href={step.href} className="group block">
                     <div className="rounded-lg ring-1 ring-line transition group-hover:ring-2 group-hover:ring-brand">
                       <Cover comic={c} />

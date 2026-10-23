@@ -21,8 +21,32 @@ export type PageImageResult = {
   model: string;
 };
 
+export type PanelEditRequest = {
+  /** Gambar panel saat ini yang akan diubah. */
+  image: { data: Uint8Array; mimeType: string };
+  /** Perintah guru, mis. "ganti apel jadi jeruk". Data dari pengguna, bukan instruksi sistem. */
+  instruksi: string;
+  gaya: string;
+  karakter: { nama: string; deskripsi: string }[];
+  /** 0-2 potret tokoh sebagai referensi tambahan. */
+  referenceImages?: { data: Uint8Array; mimeType: string; label?: string }[];
+};
+
+export type PortraitRequest = {
+  nama: string;
+  /** Ciri visual tokoh dari guru; data pengguna, bukan instruksi sistem. */
+  deskripsi: string;
+  gaya: string;
+  /** "potret" = setengah badan (kotak); "badan" = seluruh tubuh berdiri (3:4). Bawaan: potret. */
+  bentuk?: "potret" | "badan";
+  /** Opsional: halaman komik yang sudah dibuat, agar potret mengikuti tokoh yang sudah digambar. */
+  referenceImages?: { data: Uint8Array; mimeType: string; label?: string }[];
+};
+
 /** Lapisan abstraksi supaya provider gambar (Nano Banana, OpenAI) mudah diganti. */
 export interface ImageProvider {
   readonly name: string;
   generatePage(req: PageImageRequest): Promise<PageImageResult>;
+  editPanel(req: PanelEditRequest): Promise<PageImageResult>;
+  generatePortrait(req: PortraitRequest): Promise<PageImageResult>;
 }

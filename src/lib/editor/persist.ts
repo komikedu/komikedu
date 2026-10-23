@@ -16,6 +16,8 @@ const PanelSchema = z.object({
   w: z.number().finite().min(1).max(PAGE_W),
   h: z.number().finite().min(1).max(PAGE_H),
   visible: z.boolean(),
+  /** id panel asal bila ini salinan yang gambarnya harus disalin server */
+  salinanDari: z.string().uuid().optional(),
   /** deskripsi adegan untuk membuat gambar; bisa diedit guru di editor */
   adegan: z.string().max(1000),
   /** sudut panel miring; null/absen = panel kotak */
@@ -254,4 +256,9 @@ export function fromNested(rows: NestedPage[]): EditorPage[] {
         }),
       };
     });
+}
+
+/** Panel salinan (hasil duplikat panel atau halaman) yang gambarnya harus disalin server dari panel asal. */
+export function panelSalinan(pages: { panels: { id: string; salinanDari?: string }[] }[]): { id: string; dari: string }[] {
+  return pages.flatMap((pg) => pg.panels.filter((p) => p.salinanDari && p.salinanDari !== p.id).map((p) => ({ id: p.id, dari: p.salinanDari! })));
 }

@@ -1,8 +1,10 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { temporal } from "zundo";
+import { gantiNamaDiTeks, type GantiNama } from "@/lib/comics/tokoh";
 import { createBubble, createKumpulan, createPage } from "./factory";
 import { layoutBubbles } from "./from-script";
+import { deletePage, duplicatePage, insertPageAfter } from "./page-ops";
 import { deletePanel, duplicateBubble, duplicateElement, duplicatePanel, movePanel, resetCorners, resizePanel, setCorner, setImageRect, splitPanel, type SplitArah } from "./panel-ops";
 import type { Bubble, BubbleKind, EditorPage, MathElement, Panel, Point } from "./types";
 
@@ -27,6 +29,10 @@ type EditorState = {
   setTool: (tool: Tool) => void;
   setZoom: (zoom: number) => void;
   addPage: (layoutId: string) => void;
+  /** Sisipkan halaman kosong, duplikat, atau hapus halaman; halaman baru menjadi aktif. */
+  insertPageAfter: (id: string) => void;
+  duplicatePage: (id: string) => void;
+  deletePage: (id: string) => void;
   addBubble: (panelId: string, kind: BubbleKind, cx: number, cy: number) => void;
   updateBubble: (id: string, patch: Partial<Omit<Bubble, "id" | "panelId">>) => void;
   deleteBubble: (id: string) => void;
@@ -49,6 +55,8 @@ type EditorState = {
   deletePanel: (id: string) => void;
   updatePanel: (id: string, patch: Partial<Pick<Panel, "visible" | "adegan">>) => void;
   /** Isi panel yang adegannya kosong dengan hasil AI (adegan + balon dialog), sebagai satu langkah riwayat. */
+  /** Ganti nama tokoh di semua balon dan adegan (satu langkah undo). */
+  gantiNamaTokoh: (ganti: GantiNama[]) => void;
   isiPanelKosong: (pageId: string, hasil: { id: string; adegan: string; dialog: { karakter: string; jenis: Bubble["kind"]; teks: string }[] }[]) => void;
 };
 
@@ -95,6 +103,28 @@ export const useEditor = create<EditorState>()(
           const page = createPage(layoutId);
           s.pages.push(page);
           s.activePageId = page.id;
+          s.selectedId = null;
+        }),
+
+      insertPageAfter: (id) =>
+        set((s) => {
+          const baru = insertPageAfter(s.pages, id);
+          if (!baru) return;
+          s.activePageId = baru;
+          s.selectedId = null;
+        }),
+      duplicatePage: (id) =>
+        set((s) => {
+          const baru = duplicatePage(s.pages, id);
+          if (!baru) return;
+          s.activePageId = baru;
+          s.selectedId = null;
+        }),
+      deletePage: (id) =>
+        set((s) => {
+          const berikut = deletePage(s.pages, id);
+          if (!berikut) return;
+          if (s.activePageId === id || !s.pages.some((p) => p.id === s.activePageId)) s.activePageId = berikut;
           s.selectedId = null;
         }),
 
@@ -238,6 +268,14 @@ export const useEditor = create<EditorState>()(
             if (!panel || panel.adegan.trim()) continue; // panel yang sudah berisi tidak ditimpa
             panel.adegan = h.adegan;
             page.bubbles.push(...layoutBubbles({ ...panel }, h.dialog));
+          }
+        }),
+
+      gantiNamaTokoh: (ganti) =>
+        set((s) => {
+          for (const page of s.pages) {
+            for (const p of page.panels) p.adegan = gantiNamaDiTeks(p.adegan, ganti);
+            for (const b of page.bubbles) b.text = gantiNamaDiTeks(b.text, ganti);
           }
         }),
 

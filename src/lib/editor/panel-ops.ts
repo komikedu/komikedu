@@ -60,6 +60,7 @@ export function duplicatePanel(page: EditorPage, panelId: string): string | null
   const salinan: Panel = {
     ...p,
     id: newId(),
+    salinanDari: p.imageUrl ? p.id : undefined,
     x,
     y,
     corners: p.corners ? p.corners.map((c) => ({ x: c.x + dx, y: c.y + dy })) : null,

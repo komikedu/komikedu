@@ -1,5 +1,4 @@
 import { notFound, redirect } from "next/navigation";
-import { AppHeader } from "@/components/app-header";
 import { WIZARD_STEPS } from "@/lib/comics/schema";
 import type { Tokoh } from "@/lib/comics/tokoh";
 import { createClient } from "@/lib/supabase/server";
@@ -41,8 +40,7 @@ export default async function WizardPage({
   const step = Number.isInteger(diminta) && diminta >= 1 && diminta <= WIZARD_STEPS ? diminta : comic.wizard_step;
 
   return (
-    <div className="min-h-screen bg-surface-muted">
-      <AppHeader />
+    <div className="min-h-screen">
       <WizardForm
         comicId={comic.id}
         userId={user.id}

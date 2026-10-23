@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { AppHeaderView } from "@/components/app-header";
 import { WizardForm } from "@/app/comics/[id]/wizard/wizard-form";
 
 /** Pratinjau wizard dengan data contoh, tanpa login dan tanpa menyimpan. Hanya ada saat development. */
@@ -13,8 +12,7 @@ export default async function DevWizardPage({ searchParams }: { searchParams: Pr
   }
 
   return (
-    <div className="min-h-screen bg-surface-muted">
-      <AppHeaderView user={{ email: "guru@sekolah.sch.id", nama: "Bu Rina", saldo: 13 }} />
+    <div className="min-h-screen">
       <WizardForm
         comicId="00000000-0000-4000-8000-000000000000"
         userId="00000000-0000-4000-8000-000000000001"

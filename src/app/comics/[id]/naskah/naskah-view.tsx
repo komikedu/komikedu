@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, Plus, Trash2, X } from "lucide-react";
 import { LAYOUTS } from "@/lib/ai/layouts";
-import { MAX_BALLOON_WORDS, type Flag, type Script } from "@/lib/ai/schemas";
+import { MAX_BALLOON_WORDS, flagMemblokir, type Flag, type Script } from "@/lib/ai/schemas";
 import {
   MAX_BALON,
   MAX_PANEL,
@@ -170,7 +170,9 @@ function Review({ comicId, naskahAwal, flagsAwal, adaHalamanEditor, saldo, simpa
   };
 
   const halaman = [...naskah.halaman].sort((a, b) => a.urutan - b.urutan);
-  const belumSiap = flags.length > 0 || simpan === "dirty" || simpan === "saving" || simpan === "error";
+  const blokir = flags.filter(flagMemblokir).length;
+  const saran = flags.length - blokir;
+  const belumSiap = blokir > 0 || simpan === "dirty" || simpan === "saving" || simpan === "error";
 
   function setujui() {
     if (adaHalamanEditor && !window.confirm("Isi editor saat ini akan diganti dengan halaman dari naskah ini. Lanjutkan?")) return;
@@ -186,12 +188,13 @@ function Review({ comicId, naskahAwal, flagsAwal, adaHalamanEditor, saldo, simpa
       <div
         role="status"
         className={`sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm ${
-          flags.length ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"
+          blokir ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"
         }`}
       >
         <span className="flex items-center gap-2">
-          {flags.length ? <AlertTriangle size={16} className="text-amber-700" /> : <CheckCircle2 size={16} className="text-emerald-700" />}
-          {flags.length ? `${flags.length} tanda perlu ditinjau sebelum naskah disetujui.` : "Semua cek lolos. Tetap baca ulang sebelum dipakai di kelas."}
+          {blokir ? <AlertTriangle size={16} className="text-amber-700" /> : <CheckCircle2 size={16} className="text-emerald-700" />}
+          {blokir ? `${blokir} tanda perlu diperbaiki sebelum naskah disetujui.` : "Semua cek lolos. Tetap baca ulang sebelum dipakai di kelas."}
+          {saran > 0 && <span className="text-xs text-amber-800">{saran} saran jumlah benda.</span>}
           <span className="text-xs text-gray-500">
             {simpan === "dirty" && "Belum disimpan..."}
             {simpan === "saving" && "Menyimpan..."}
@@ -366,6 +369,7 @@ function Review({ comicId, naskahAwal, flagsAwal, adaHalamanEditor, saldo, simpa
                           {f.jenis === "panjang-balon" && `${f.alasan}. Persingkat teksnya.`}
                           {f.jenis === "adegan-kosong" && "Adegan panel ini masih kosong. Isi agar gambarnya bisa dibuat."}
                           {f.jenis === "balon-kosong" && "Ada balon yang masih kosong. Isi teksnya atau hapus balonnya."}
+                          {f.jenis === "jumlah-di-gambar" && `Saran: ${f.alasan} (Tidak menghalangi persetujuan.)`}
                         </p>
                       ))}
                   </div>

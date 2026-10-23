@@ -6,12 +6,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Apple,
   ChevronDown,
+  Copy,
   Eye,
   EyeOff,
+  FilePlus,
   Home,
+  Loader2,
   MousePointer2,
   Plus,
   Redo2,
+  Sparkles,
   Trash2,
   Type,
   Undo2,
@@ -19,10 +23,17 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { LAYOUTS } from "@/lib/ai/layouts";
+import { PageThumb } from "@/components/page-thumb";
+import type { HalamanThumb } from "@/lib/comics/thumb";
 import { MAX_PANELS_PER_PAGE } from "@/lib/editor/panel-ops";
+import { MAX_PAGES } from "@/lib/editor/persist";
+import { jumlahBendaDiAdegan } from "@/lib/ai/jumlah";
 import { IKON_BENDA, MAX_JUMLAH, MAX_KOLOM, namaIkon } from "@/lib/editor/math-elements";
 import { applyPanelImages, clearHistory, redo, selectSelectedBubble, selectSelectedElement, selectSelectedPanel, undo, useEditor } from "@/lib/editor/store";
 import type { BubbleKind, EditorPage } from "@/lib/editor/types";
+import type { Tokoh } from "@/lib/comics/tokoh";
+import { AdeganInput, NamaTokohContext } from "./adegan-input";
+import { TokohTab } from "./tokoh-tab";
 
 const EditorCanvas = dynamic(() => import("./editor-canvas"), {
   ssr: false,
@@ -50,12 +61,30 @@ function ToolButton({ label, active, disabled, onClick, children }: { label: str
   );
 }
 
+/** Halaman editor sebagai data thumbnail: panel dengan gambarnya di posisi aslinya. */
+function thumbHalaman(page: EditorPage): HalamanThumb {
+  return {
+    panels: page.panels.filter((p) => p.visible).map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h, corners: p.corners ?? undefined, gambar: p.imageRect ?? undefined, imageUrl: p.imageUrl })),
+  };
+}
+
 function PagesPanel() {
   const pages = useEditor((s) => s.pages);
   const activeId = useEditor((s) => s.activePageId);
   const setActive = useEditor((s) => s.setActivePage);
   const addPage = useEditor((s) => s.addPage);
+  const insertAfter = useEditor((s) => s.insertPageAfter);
+  const duplicate = useEditor((s) => s.duplicatePage);
+  const remove = useEditor((s) => s.deletePage);
   const [picking, setPicking] = useState(false);
+  const penuh = pages.length >= MAX_PAGES;
+  const aksi = "grid h-6 w-6 place-items-center rounded text-white hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-40";
+
+  function hapus(p: EditorPage, nomor: number) {
+    const berisi = p.bubbles.length > 0 || p.elements.length > 0 || p.panels.some((x) => x.imageUrl || x.adegan.trim());
+    if (berisi && !window.confirm(`Hapus halaman ${nomor} beserta isinya?`)) return;
+    remove(p.id);
+  }
 
   return (
     <section aria-label="Halaman" className="border-b border-line p-3">
@@ -65,24 +94,46 @@ function PagesPanel() {
           {pages.findIndex((p) => p.id === activeId) + 1} dari {pages.length}
         </span>
       </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {pages.map((p, i) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => setActive(p.id)}
-            aria-current={p.id === activeId}
-            className={`grid h-24 w-[72px] place-items-center rounded border text-sm ${p.id === activeId ? "border-brand ring-2 ring-brand/30" : "border-line"}`}
-          >
-            {i + 1}
-          </button>
-        ))}
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {pages.map((p, i) => {
+          const thumb = thumbHalaman(p);
+          const adaGambar = thumb.panels.some((x) => x.imageUrl);
+          return (
+            <div key={p.id} className="group relative">
+              <button
+                type="button"
+                onClick={() => setActive(p.id)}
+                aria-current={p.id === activeId}
+                aria-label={`Halaman ${i + 1}`}
+                className={`relative block w-full overflow-hidden rounded border ${p.id === activeId ? "border-brand ring-2 ring-brand/30" : "border-line"}`}
+              >
+                <PageThumb halaman={thumb} />
+                {!adaGambar && <span className="absolute inset-0 grid place-items-center text-sm text-gray-600">{i + 1}</span>}
+              </button>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between rounded-b bg-gradient-to-t from-black/70 to-transparent px-2 pb-1.5 pt-6 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
+                <span className="text-sm font-bold text-white">{i + 1}</span>
+                <span className="pointer-events-auto flex gap-0.5">
+                  <button type="button" title="Sisipkan halaman setelah ini" aria-label={`Sisipkan halaman setelah halaman ${i + 1}`} disabled={penuh} onClick={() => insertAfter(p.id)} className={aksi}>
+                    <FilePlus size={14} />
+                  </button>
+                  <button type="button" title="Duplikat halaman" aria-label={`Duplikat halaman ${i + 1}`} disabled={penuh} onClick={() => duplicate(p.id)} className={aksi}>
+                    <Copy size={14} />
+                  </button>
+                  <button type="button" title="Hapus halaman" aria-label={`Hapus halaman ${i + 1}`} disabled={pages.length <= 1} onClick={() => hapus(p, i + 1)} className={aksi}>
+                    <Trash2 size={14} />
+                  </button>
+                </span>
+              </div>
+            </div>
+          );
+        })}
         <div className="relative">
           <button
             type="button"
             onClick={() => setPicking((v) => !v)}
             aria-expanded={picking}
-            className="grid h-24 w-[72px] place-items-center rounded border border-dashed border-line text-xs text-gray-500 hover:bg-surface-muted"
+            disabled={penuh}
+            className="grid aspect-[3/4] w-full place-items-center rounded border border-dashed border-line text-xs text-gray-500 hover:bg-surface-muted disabled:opacity-40"
           >
             <span className="flex flex-col items-center">
               <Plus size={16} />
@@ -90,7 +141,7 @@ function PagesPanel() {
             </span>
           </button>
           {picking && (
-            <div role="menu" className="absolute left-0 top-full z-20 mt-1 w-56 rounded-lg border border-line bg-surface p-2 shadow-lg">
+            <div role="menu" className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-line bg-surface p-2 shadow-lg">
               <p className="px-1 pb-1 text-xs text-gray-500">Pilih layout</p>
               {LAYOUTS.map((l) => (
                 <button
@@ -219,8 +270,76 @@ type GenerateProps = {
 };
 
 const GAMBAR_COST = 1;
+const EDIT_COST = 1;
+
+type EditAiProps = {
+  tersimpan: boolean;
+  saldo: number;
+  /** id panel yang sedang diedit AI, atau halaman sedang dibuat gambarnya */
+  sibuk: string | null;
+  /** kembalikan pesan galat, atau null bila berhasil */
+  onEdit: (panelId: string, instruksi: string) => Promise<string | null>;
+};
+
+function EditAiSection({ panelId, ai }: { panelId: string; ai: EditAiProps }) {
+  const [instruksi, setInstruksi] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [berhasil, setBerhasil] = useState(false);
+  const jalan = ai.sibuk === panelId;
+  const kurang = ai.saldo < EDIT_COST;
+  const valid = instruksi.trim().length >= 3;
+
+  async function kirim() {
+    setError(null);
+    setBerhasil(false);
+    const err = await ai.onEdit(panelId, instruksi.trim());
+    if (err) setError(err);
+    else {
+      setInstruksi("");
+      setBerhasil(true);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <p className="flex items-center gap-1.5 font-semibold">
+        <Sparkles size={14} className="text-brand" /> Edit gambar dengan AI
+      </p>
+      <p className="mt-1 text-xs text-gray-500">Tulis bagian yang ingin diubah. Bagian lain gambar dipertahankan.</p>
+      <textarea
+        aria-label="Perintah edit gambar"
+        rows={3}
+        maxLength={300}
+        value={instruksi}
+        onChange={(e) => setInstruksi(e.target.value)}
+        placeholder="mis. buat Doni tersenyum, ganti latar jadi kelas, hapus kucing di belakang"
+        className="mt-2 w-full rounded border border-line px-2 py-1.5 text-xs"
+      />
+      <button
+        type="button"
+        disabled={!ai.tersimpan || ai.sibuk !== null || kurang || !valid}
+        onClick={() => void kirim()}
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {jalan ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+        {jalan ? "Mengubah gambar..." : `Ubah gambar · ${EDIT_COST} kredit`}
+      </button>
+      {jalan && <p role="status" className="mt-2 text-xs text-gray-600">Biasanya 15 sampai 40 detik.</p>}
+      {kurang && !jalan && <p className="mt-2 text-xs text-amber-700">Kredit tidak cukup.</p>}
+      {!ai.tersimpan && <p className="mt-2 text-xs text-gray-500">Hanya tersedia di komik yang tersimpan.</p>}
+      {berhasil && <p role="status" className="mt-2 text-xs text-emerald-700">Gambar diperbarui. Belum pas? Tulis perintah lain untuk memperbaikinya.</p>}
+      {error && (
+        <p role="alert" className="mt-2 rounded bg-red-50 p-2 text-xs text-red-700">
+          {error}
+        </p>
+      )}
+      <p className="mt-2 text-xs text-gray-500">Jumlah benda yang harus pasti? Pakai alat Elemen Mat, bukan AI.</p>
+    </div>
+  );
+}
 
 function PageTab({ page, gen }: { page: EditorPage; gen: GenerateProps }) {
+  const updatePanel = useEditor((s) => s.updatePanel);
   const tanpaAdegan = page.panels.findIndex((p) => !p.adegan.trim());
   const sudahAdaGambar = page.panels.some((p) => p.imageUrl);
   const kurang = gen.saldo < GAMBAR_COST;
@@ -228,12 +347,22 @@ function PageTab({ page, gen }: { page: EditorPage; gen: GenerateProps }) {
     <div className="space-y-4 p-4 text-sm">
       <div>
         <h3 className="font-semibold">Naskah halaman</h3>
-        <p className="mt-1 text-xs text-gray-500">Dari naskah yang sudah disetujui. Gambar dibuat dari adegan ini.</p>
+        <p className="mt-1 text-xs text-gray-500">Gambar dibuat dari adegan ini. Ketik @ untuk menyebut tokoh agar wajahnya sesuai.</p>
         <ol className="mt-2 space-y-2">
           {page.panels.map((p, i) => (
             <li key={p.id} className="rounded border border-line p-2">
               <p className="text-xs font-semibold">Panel {i + 1}</p>
-              <p className={`mt-0.5 text-xs ${p.adegan ? "text-gray-600" : "text-amber-700"}`}>{p.adegan || "Belum ada adegan."}</p>
+              <AdeganInput
+                label={`Adegan panel ${i + 1}`}
+                value={p.adegan}
+                onChange={(v) => updatePanel(p.id, { adegan: v })}
+                className={`mt-1 ${p.adegan.trim() ? "" : "border-amber-300"}`}
+              />
+              {jumlahBendaDiAdegan(p.adegan).length > 0 && (
+                <p className="mt-1 text-xs text-amber-800">
+                  Gambar AI bisa salah hitung ({jumlahBendaDiAdegan(p.adegan).join(", ")}). Pakai alat Elemen Mat agar jumlahnya pasti.
+                </p>
+              )}
             </li>
           ))}
         </ol>
@@ -283,7 +412,7 @@ function PageTab({ page, gen }: { page: EditorPage; gen: GenerateProps }) {
   );
 }
 
-function PanelTab() {
+function PanelTab({ ai }: { ai: EditAiProps }) {
   const panel = useEditor(selectSelectedPanel);
   const page = useEditor((s) => s.pages.find((p) => p.id === s.activePageId));
   const split = useEditor((s) => s.splitPanel);
@@ -306,16 +435,9 @@ function PanelTab() {
       </div>
       <div>
         <p className="text-xs font-medium text-gray-600">Adegan (dipakai untuk membuat gambar)</p>
-        <textarea
-          aria-label="Adegan panel"
-          rows={4}
-          maxLength={1000}
-          value={panel.adegan}
-          onChange={(e) => updatePanel(panel.id, { adegan: e.target.value })}
-          placeholder="Gambarkan adegannya tanpa teks, mis. Kiki menunjuk lampu merah di depan toko kue."
-          className="mt-1 w-full rounded border border-line px-2 py-1.5 text-xs"
-        />
+        <AdeganInput label="Adegan panel" rows={4} value={panel.adegan} onChange={(v) => updatePanel(panel.id, { adegan: v })} className="mt-1" />
       </div>
+      {panel.imageUrl && <EditAiSection key={panel.id} panelId={panel.id} ai={ai} />}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" disabled={penuh} onClick={() => split(panel.id, "horizontal")} className={btn}>
           Bagi kiri-kanan
@@ -407,14 +529,14 @@ function ElementTab() {
   );
 }
 
-function LayerTab() {
+function LayerTab({ ai }: { ai: EditAiProps }) {
   const element = useEditor(selectSelectedElement);
   const panel = useEditor(selectSelectedPanel);
   const bubble = useEditor(selectSelectedBubble);
   const update = useEditor((s) => s.updateBubble);
   const del = useEditor((s) => s.deleteBubble);
   if (element) return <ElementTab />;
-  if (panel) return <PanelTab />;
+  if (panel) return <PanelTab ai={ai} />;
   if (!bubble) return <p className="p-4 text-sm text-gray-500">Pilih panel, balon, atau elemen di kanvas untuk mengubahnya.</p>;
 
   return (
@@ -599,7 +721,26 @@ function useAutosave(comicId: string | undefined, ready: boolean) {
   return { state, error, retry: flush, simpanSekarang };
 }
 
-export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }: { comicId?: string; title: string; fontFamily: string; initialPages: EditorPage[]; kredit: number }) {
+export function EditorShell({
+  comicId,
+  title,
+  fontFamily,
+  initialPages,
+  kredit,
+  tokoh = [],
+  gaya = null,
+  karakter = [],
+}: {
+  comicId?: string;
+  title: string;
+  fontFamily: string;
+  initialPages: EditorPage[];
+  kredit: number;
+  tokoh?: Tokoh[];
+  gaya?: string | null;
+  /** lembar karakter komik (karakter_json) */
+  karakter?: { nama: string; deskripsi: string }[];
+}) {
   const init = useEditor((s) => s.init);
   const page = useEditor((s) => s.pages.find((p) => p.id === s.activePageId));
   const tool = useEditor((s) => s.tool);
@@ -608,12 +749,15 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
   const setZoom = useEditor((s) => s.setZoom);
   const selectedId = useEditor((s) => s.selectedId);
   const del = useEditor((s) => s.deleteBubble);
-  const [tab, setTab] = useState<"halaman" | "layer">("halaman");
+  const [tab, setTab] = useState<"halaman" | "layer" | "tokoh">("halaman");
   const [ready, setReady] = useState(false);
   const save = useAutosave(comicId, ready);
   const [saldo, setSaldo] = useState(kredit);
   const [generatingPage, setGeneratingPage] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
+  const [editingPanel, setEditingPanel] = useState<string | null>(null);
+  const [daftarTokoh, setDaftarTokoh] = useState(tokoh);
+  const [sheet, setSheet] = useState(karakter);
 
   const [melengkapi, setMelengkapi] = useState(false);
   const [pesanLengkapi, setPesanLengkapi] = useState<{ ok: boolean; teks: string } | null>(null);
@@ -661,6 +805,30 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
     }
   }
 
+  async function editPanelAi(panelId: string, instruksi: string): Promise<string | null> {
+    if (!comicId) return "Komik belum tersimpan";
+    setEditingPanel(panelId);
+    try {
+      if (!(await save.simpanSekarang())) return "Gagal menyimpan perubahan editor. Coba lagi.";
+      const res = await fetch(`/api/comics/${comicId}/panels/${panelId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ instruksi }),
+      });
+      const json = (await res.json().catch(() => null)) as { ok: true; imageUrl: string; saldo: number } | { ok: false; error: string } | null;
+      if (res.ok && json?.ok) {
+        applyPanelImages({ [panelId]: json.imageUrl });
+        setSaldo(json.saldo);
+        return null;
+      }
+      return json && !json.ok ? json.error : "Gagal mengubah gambar. Coba lagi.";
+    } catch {
+      return "Tidak ada koneksi. Coba lagi.";
+    } finally {
+      setEditingPanel(null);
+    }
+  }
+
   async function generateHalaman(pageId: string) {
     if (!comicId) return;
     setGenError(null);
@@ -673,12 +841,14 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
       }
       const res = await fetch(`/api/comics/${comicId}/pages/${pageId}/generate`, { method: "POST" });
       const json = (await res.json().catch(() => null)) as
-        | { ok: true; panels: { id: string; imageUrl: string }[]; saldo: number }
+        | { ok: true; panels: { id: string; imageUrl: string }[]; saldo: number; tokoh: Tokoh[]; karakter: { nama: string; deskripsi: string }[] }
         | { ok: false; error: string }
         | null;
       if (res.ok && json?.ok) {
         applyPanelImages(Object.fromEntries(json.panels.map((p) => [p.id, p.imageUrl])));
         setSaldo(json.saldo);
+        setDaftarTokoh(json.tokoh);
+        setSheet(json.karakter);
       } else {
         setGenError(json && !json.ok ? json.error : "Gagal membuat gambar. Coba lagi.");
       }
@@ -688,6 +858,20 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
       setGeneratingPage(null);
     }
   }
+
+  // Ctrl/Cmd + scroll (dan cubit trackpad) di area kanvas memperbesar kanvas, bukan seluruh halaman browser.
+  // Dipasang di window dengan passive: false karena React mendaftarkan onWheel sebagai pasif.
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !mainRef.current?.contains(e.target as Node)) return;
+      e.preventDefault();
+      const st = useEditor.getState();
+      st.setZoom(Math.round(st.zoom * Math.exp(-e.deltaY * 0.002) * 100) / 100);
+    };
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => window.removeEventListener("wheel", onWheel);
+  }, []);
 
   // akses store dari konsol browser untuk debugging (hanya development)
   useEffect(() => {
@@ -772,7 +956,7 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
         <LayersPanel />
       </aside>
 
-      <main className="relative min-w-0 flex-1">
+      <main ref={mainRef} className="relative min-w-0 flex-1">
         <Link href="/dashboard" className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-surface px-4 py-1.5 text-sm shadow">
           <Home size={14} /> Dashboard
         </Link>
@@ -816,8 +1000,8 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
       </main>
 
       <aside className="flex w-80 shrink-0 flex-col border-l border-line bg-surface">
-        <div role="tablist" aria-label="Pengaturan" className="m-3 grid grid-cols-2 gap-1 rounded-lg bg-surface-muted p-1 text-sm">
-          {(["halaman", "layer"] as const).map((t) => (
+        <div role="tablist" aria-label="Pengaturan" className="m-3 grid grid-cols-3 gap-1 rounded-lg bg-surface-muted p-1 text-sm">
+          {(["halaman", "layer", "tokoh"] as const).map((t) => (
             <button
               key={t}
               role="tab"
@@ -826,10 +1010,12 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
               onClick={() => setTab(t)}
               className={`rounded-md px-3 py-1.5 font-medium ${tab === t ? "bg-surface shadow-sm" : "text-gray-500"}`}
             >
-              {t === "halaman" ? "Halaman" : "Layer"}
+              {t === "halaman" ? "Halaman" : t === "layer" ? "Layer" : "Tokoh"}
             </button>
           ))}
         </div>
+        {/* daftar nama tokoh untuk saran "@" di kolom adegan */}
+        <NamaTokohContext.Provider value={daftarTokoh.map((t) => t.nama)}>
         <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
           {tab === "halaman" ? (
             <PageTab
@@ -837,7 +1023,7 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
               gen={{
                 tersimpan: !!comicId,
                 saldo,
-                generating: generatingPage !== null,
+                generating: generatingPage !== null || editingPanel !== null,
                 error: genError,
                 onGenerate: () => void generateHalaman(page.id),
                 melengkapi,
@@ -845,10 +1031,20 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
                 onLengkapi: () => void lengkapiNaskah(page.id),
               }}
             />
+          ) : tab === "tokoh" ? (
+            <TokohTab comicId={comicId} gaya={gaya} tokoh={daftarTokoh} setTokoh={setDaftarTokoh} sheet={sheet} saldo={saldo} setSaldo={setSaldo} />
           ) : (
-            <LayerTab />
+            <LayerTab
+              ai={{
+                tersimpan: !!comicId,
+                saldo,
+                sibuk: editingPanel ?? generatingPage,
+                onEdit: editPanelAi,
+              }}
+            />
           )}
         </div>
+        </NamaTokohContext.Provider>
       </aside>
     </div>
   );

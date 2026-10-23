@@ -2,7 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { extractText, getDocumentProxy } from "unpdf";
-import { createClient } from "@/lib/supabase/server";
+import { z } from "zod";
+import { hapusFolderKomik } from "@/lib/storage/gambar";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { DraftPatchSchema, MAX_PDF_BYTES, MAX_PDF_PAGES, type DraftPatch } from "@/lib/comics/schema";
 
 const MAX_TEXT_CHARS = 200_000;
@@ -98,4 +100,43 @@ export async function removeMaterial(comicId: string): Promise<{ ok: boolean }> 
   if (data?.file_url) await supabase.storage.from("materials").remove([data.file_url]);
   const { error } = await supabase.from("source_materials").delete().eq("comic_id", comicId);
   return { ok: !error };
+}
+
+const IdSchema = z.string().uuid();
+const JudulSchema = z.string().trim().min(1, "Judul tidak boleh kosong").max(120, "Judul maksimal 120 karakter");
+
+export async function renameComic(id: string, judul: string): Promise<{ ok: true; judul: string } | { ok: false; error: string }> {
+  if (!IdSchema.safeParse(id).success) return { ok: false, error: "Komik tidak ditemukan" };
+  const parsed = JudulSchema.safeParse(judul);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Judul tidak valid" };
+  const { supabase, user } = await requireUser();
+  // RLS membatasi ke komik milik sendiri; filter user_id menjaga bila kebijakan berubah
+  const { data, error } = await supabase.from("comics").update({ judul: parsed.data }).eq("id", id).eq("user_id", user.id).select("id");
+  if (error || !data?.length) return { ok: false, error: "Gagal mengubah judul" };
+  return { ok: true, judul: parsed.data };
+}
+
+/**
+ * Hapus komik beserta halaman, panel, balon, materi, dan gambarnya (cascade di database, berkas di storage).
+ * Kredit yang sudah terpakai tidak dikembalikan. Komik yang naskahnya sedang dibuat tidak bisa dihapus.
+ */
+export async function deleteComic(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!IdSchema.safeParse(id).success) return { ok: false, error: "Komik tidak ditemukan" };
+  const { supabase, user } = await requireUser();
+  const { data: comic } = await supabase.from("comics").select("id, user_id, naskah_status").eq("id", id).maybeSingle();
+  if (!comic || comic.user_id !== user.id) return { ok: false, error: "Komik tidak ditemukan" };
+  if (comic.naskah_status === "generating") return { ok: false, error: "Naskah sedang dibuat. Coba lagi setelah selesai." };
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("comics").delete().eq("id", id).eq("user_id", user.id);
+  if (error) return { ok: false, error: "Gagal menghapus komik" };
+  // berkas dihapus setelah baris database; bila gagal hanya menyisakan berkas yatim, bukan komik yang rusak
+  const folder = `${user.id}/${id}`;
+  const hapusMateri = async (a: ReturnType<typeof createAdminClient>, f: string) => {
+    const { data } = await a.storage.from("materials").list(f, { limit: 1000 });
+    const paths = (data ?? []).filter((x) => x.id).map((x) => `${f}/${x.name}`);
+    if (paths.length) await a.storage.from("materials").remove(paths);
+  };
+  await Promise.allSettled([hapusFolderKomik(admin, user.id, id), hapusMateri(admin, folder)]);
+  return { ok: true };
 }

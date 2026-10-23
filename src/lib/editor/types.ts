@@ -42,6 +42,11 @@ export type Panel = {
   visible: boolean;
   /** Deskripsi adegan dari naskah yang sudah disetujui. */
   adegan: string;
+  /**
+   * Panel ini salinan panel lain yang bergambar: server menyalin gambarnya saat menyimpan.
+   * Hanya sementara di klien; tidak ada di data yang dimuat dari database.
+   */
+  salinanDari?: string;
 };
 
 export type IkonBenda = "apel" | "jeruk" | "kue" | "bintang" | "kelereng" | "pensil";

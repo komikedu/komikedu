@@ -1,5 +1,6 @@
 "use client";
 
+import { EditorBackdrop } from "@/components/editor-backdrop";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -192,7 +193,9 @@ export function WizardForm({
   const { judul, sub } = JUDUL[step];
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-8 sm:py-12">
+    <>
+    <EditorBackdrop />
+    <main className="relative z-10 mx-auto flex min-h-screen max-w-xl flex-col justify-center px-4 py-8">
       <div className="rounded-2xl bg-surface shadow-xl ring-1 ring-line">
         <div className="px-5 pb-6 pt-6 sm:px-8">
           <div className="flex items-center justify-between text-xs text-gray-500">
@@ -559,5 +562,6 @@ export function WizardForm({
         </div>
       </div>
     </main>
+    </>
   );
 }

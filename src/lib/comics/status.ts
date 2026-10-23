@@ -1,4 +1,5 @@
 import { LANGKAH_CERITA } from "./schema";
+import type { HalamanThumb } from "./thumb";
 
 export type ComicSummary = {
   id: string;
@@ -10,6 +11,8 @@ export type ComicSummary = {
   gaya: string | null;
   adaMateri: boolean;
   created_at: string;
+  /** halaman 1 untuk sampul; kosong bila belum ada gambar */
+  halaman1?: HalamanThumb | null;
 };
 
 export type NextStep = {

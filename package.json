@@ -12,6 +12,7 @@
     "try:image": "node --env-file=.env.local --conditions=react-server --import tsx scripts/try-image.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1156.0",
     "@google/genai": "^2.30.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.118.0",

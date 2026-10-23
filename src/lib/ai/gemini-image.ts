@@ -1,7 +1,7 @@
 import "server-only";
 import { GoogleGenAI } from "@google/genai";
-import type { ImageProvider, PageImageRequest, PageImageResult } from "./image-provider";
-import { buildPagePrompt } from "./page-prompt";
+import type { ImageProvider, PageImageRequest, PageImageResult, PanelEditRequest, PortraitRequest } from "./image-provider";
+import { buildEditPrompt, buildPagePrompt, buildPortraitPrompt } from "./page-prompt";
 import { catatPemakaian } from "./usage";
 
 export { buildPagePrompt };
@@ -21,22 +21,50 @@ export class GeminiImageProvider implements ImageProvider {
     return (this.client ??= new GoogleGenAI({ apiKey }));
   }
 
-  async generatePage(req: PageImageRequest): Promise<PageImageResult> {
-    const model = req.premium ? IMAGE_MODEL_PREMIUM : IMAGE_MODEL;
+  generatePage(req: PageImageRequest): Promise<PageImageResult> {
     const parts = [
       { text: buildPagePrompt(req) },
       ...(req.referenceImages ?? []).slice(0, 3).map((r) => ({
         inlineData: { data: Buffer.from(r.data).toString("base64"), mimeType: r.mimeType },
       })),
     ];
+    return this.request(req.premium ? IMAGE_MODEL_PREMIUM : IMAGE_MODEL, parts, { aspectRatio: "3:4" });
+  }
 
+  /** Ubah gambar satu panel; rasio mengikuti gambar asli (tanpa imageConfig). */
+  editPanel(req: PanelEditRequest): Promise<PageImageResult> {
+    const parts = [
+      { text: buildEditPrompt(req) },
+      { inlineData: { data: Buffer.from(req.image.data).toString("base64"), mimeType: req.image.mimeType } },
+      ...(req.referenceImages ?? []).slice(0, 2).map((r) => ({
+        inlineData: { data: Buffer.from(r.data).toString("base64"), mimeType: r.mimeType },
+      })),
+    ];
+    return this.request(IMAGE_MODEL, parts);
+  }
+
+  generatePortrait(req: PortraitRequest): Promise<PageImageResult> {
+    const parts = [
+      { text: buildPortraitPrompt(req) },
+      ...(req.referenceImages ?? []).slice(0, 2).map((r) => ({
+        inlineData: { data: Buffer.from(r.data).toString("base64"), mimeType: r.mimeType },
+      })),
+    ];
+    return this.request(IMAGE_MODEL, parts, { aspectRatio: req.bentuk === "badan" ? "3:4" : "1:1" });
+  }
+
+  private async request(
+    model: string,
+    parts: ({ text: string } | { inlineData: { data: string; mimeType: string } })[],
+    imageConfig?: { aspectRatio: string },
+  ): Promise<PageImageResult> {
     const started = Date.now();
     for (let attempt = 1; ; attempt++) {
       try {
         const res = await this.getClient().models.generateContent({
           model,
           contents: [{ role: "user", parts }],
-          config: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } },
+          config: { responseModalities: ["IMAGE"], ...(imageConfig ? { imageConfig } : {}) },
         });
         const pakai = catatPemakaian(model, res.usageMetadata);
         const img = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;

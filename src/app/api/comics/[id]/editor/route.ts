@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { saveEditorData } from "@/lib/editor/save";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 const MAX_BODY_BYTES = 1_000_000;
 
@@ -32,7 +32,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const { id } = await params;
-  const res = await saveEditorData(supabase, user.id, id, body);
+  const res = await saveEditorData(supabase, user.id, id, body, createAdminClient());
   return res.ok
     ? NextResponse.json({ ok: true })
     : NextResponse.json({ ok: false, error: res.error }, { status: res.status });

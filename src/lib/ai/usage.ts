@@ -41,6 +41,13 @@ export function catatPemakaian(model: string, meta: UsageMetadata | undefined): 
   return p;
 }
 
+/** Untuk provider yang tidak melaporkan token (mis. Cloudflare): catat model dan perkiraan biaya saja. */
+export function catatBiaya(model: string, biaya: number): Pemakaian {
+  const p = { model, input_tokens: 0, output_tokens: 0, biaya: Number(biaya.toFixed(6)) };
+  pencatat.getStore()?.push(p);
+  return p;
+}
+
 /** Jalankan `fn` sambil mengumpulkan pemakaian setiap panggilan AI di dalamnya ke `log` (tetap terisi bila `fn` gagal). */
 export function rekamPemakaian<R>(log: Pemakaian[], fn: () => Promise<R>): Promise<R> {
   return pencatat.run(log, fn);

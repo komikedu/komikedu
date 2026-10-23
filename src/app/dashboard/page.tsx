@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppHeaderView } from "@/components/app-header";
 import type { ComicSummary } from "@/lib/comics/status";
+import { halamanThumb } from "@/lib/comics/thumb";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardView } from "./dashboard-view";
 
@@ -15,13 +16,17 @@ export default async function DashboardPage() {
     supabase.from("users").select("nama, saldo_kredit").eq("id", user.id).single(),
     supabase
       .from("comics")
-      .select("id, judul, jenjang, status, naskah_status, topik, gaya, created_at, source_materials(id)")
+      .select("id, judul, jenjang, status, naskah_status, topik, gaya, created_at, source_materials(id), pages(urutan, panels(urutan, posisi, image_url, tampil))")
       .eq("user_id", user.id)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      // hanya halaman pertama tiap komik, untuk sampul
+      .order("urutan", { referencedTable: "pages", ascending: true })
+      .limit(1, { referencedTable: "pages" }),
   ]);
 
-  const comics: ComicSummary[] = (rows ?? []).map(({ source_materials, ...c }) => ({
-    ...(c as Omit<ComicSummary, "adaMateri">),
+  const comics: ComicSummary[] = (rows ?? []).map(({ source_materials, pages, ...c }) => ({
+    ...(c as Omit<ComicSummary, "adaMateri" | "halaman1">),
+    halaman1: halamanThumb((pages as { panels: Parameters<typeof halamanThumb>[0] }[] | null)?.[0]?.panels),
     adaMateri: Array.isArray(source_materials) ? source_materials.length > 0 : !!source_materials,
   }));
 

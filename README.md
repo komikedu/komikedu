@@ -25,6 +25,14 @@ npm run dev
 
 Skema database ada di `supabase/migrations/0001_init.sql`.
 
+### Penyimpanan gambar (Cloudflare R2)
+
+Gambar komik (panel, potret dan badan penuh tokoh, hasil edit AI) disimpan di Cloudflare R2 bila variabel `R2_*` di `.env.local` terisi. Kalau kosong, dipakai bucket `panels` di Supabase, jadi pengembangan lokal tetap jalan tanpa R2. Gambar lama di Supabase tetap tampil setelah beralih.
+
+1. Buat bucket R2, lalu aktifkan akses publik (domain `r2.dev` atau domain sendiri) dan isi `R2_PUBLIC_URL` dengan domain itu.
+2. Buat API token R2 dengan izin Object Read & Write untuk bucket itu: isi `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
+3. Di Settings bucket, tambahkan aturan CORS: `AllowedOrigins` berisi alamat situs (mis. `http://localhost:3001`), `AllowedMethods` `GET`, `AllowedHeaders` `*`. Tanpa ini kanvas editor tidak bisa memuat gambar.
+
 ## Status
 
 Tahap awal: scaffold proyek dan skema database. Berikutnya: pipeline AI (gate kualitas M2).

@@ -111,6 +111,9 @@ export default async function LandingPage() {
             <a href="#harga" className="hover:text-brand">
               Harga
             </a>
+            <Link href="/komunitas" className="hover:text-brand">
+              Komunitas
+            </Link>
           </nav>
           <div className="ml-auto flex items-center gap-2">
             {masuk ? (

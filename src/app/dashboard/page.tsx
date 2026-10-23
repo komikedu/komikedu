@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { AppHeaderView } from "@/components/app-header";
 import type { ComicSummary } from "@/lib/comics/status";
 import { halamanThumb } from "@/lib/comics/thumb";
+import { isAdminEmail } from "@/lib/admin";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardView } from "./dashboard-view";
 
@@ -32,7 +33,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-surface-muted">
-      <AppHeaderView aktif="beranda" user={{ email: user.email ?? "", nama: profil?.nama ?? "", saldo: profil?.saldo_kredit ?? 0 }} />
+      <AppHeaderView aktif="beranda" user={{ email: user.email ?? "", nama: profil?.nama ?? "", saldo: profil?.saldo_kredit ?? 0, admin: isAdminEmail(user.email) }} />
       <DashboardView nama={profil?.nama ?? ""} comics={comics} />
     </div>
   );

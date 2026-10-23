@@ -8,6 +8,7 @@ import { potretTokoh, type GambarReferensi } from "@/lib/comics/referensi-tokoh"
 import { GAYA } from "@/lib/comics/schema";
 import { isPresetId, type Tokoh } from "@/lib/comics/tokoh";
 import { ambilGambar, hapusGambar, kunciKomik, simpanGambar } from "@/lib/storage/gambar";
+import { catatGaleriTokoh, type SumberGaleri } from "@/lib/comics/galeri-tokoh";
 
 export const GAMBAR_TOKOH_COST = 1;
 export const MAX_UNGGAH_BYTES = 5 * 1024 * 1024;
@@ -31,16 +32,24 @@ async function ubahUkuran(bytes: Uint8Array, jenis: JenisGambar): Promise<Buffer
 }
 
 /**
- * Simpan gambar tokoh (hasil AI atau unggahan) ke penyimpanan, catat URL-nya di tokoh_json, lalu hapus gambar lamanya.
- * tokoh_json dibaca ulang agar perubahan lain selama gambar dibuat tidak tertimpa.
+ * Simpan gambar tokoh (hasil AI atau unggahan) ke penyimpanan, jadikan gambar aktif tokoh itu, dan catat di galeri.
+ * Gambar lama TIDAK dihapus: tetap ada di galeri dan bisa dipasang lagi. tokoh_json dibaca ulang agar perubahan
+ * lain selama gambar dibuat tidak tertimpa.
  */
-export async function simpanGambarTokoh(admin: SupabaseClient, userId: string, comicId: string, tokohId: string, jenis: JenisGambar, bytes: Uint8Array): Promise<Tokoh[]> {
+export async function simpanGambarTokoh(
+  admin: SupabaseClient,
+  userId: string,
+  comicId: string,
+  tokohId: string,
+  jenis: JenisGambar,
+  bytes: Uint8Array,
+  sumber: SumberGaleri,
+): Promise<Tokoh[]> {
   const gambar = await ubahUkuran(bytes, jenis);
   const url = await simpanGambar(admin, `${userId}/${comicId}/tokoh-${tokohId}-${jenis}-${Date.now()}.webp`, gambar, "image/webp");
 
   const { data: terbaru } = await admin.from("comics").select("tokoh_json").eq("id", comicId).single();
   const daftar = (terbaru?.tokoh_json as Tokoh[] | null) ?? [];
-  const lama = daftar.find((t) => t.id === tokohId)?.[jenis];
   if (!daftar.some((t) => t.id === tokohId)) {
     await hapusGambar(admin, url);
     throw new Error("Tokoh dihapus saat gambar dibuat");
@@ -51,8 +60,7 @@ export async function simpanGambarTokoh(admin: SupabaseClient, userId: string, c
     await hapusGambar(admin, url);
     throw error;
   }
-  // hanya hapus gambar lama milik komik ini (URL dari tokoh_json bisa ditulis klien)
-  if (lama && kunciKomik(lama, userId, comicId)) await hapusGambar(admin, lama);
+  await catatGaleriTokoh(admin, comicId, tokohId, jenis, url, sumber);
   return baru;
 }
 
@@ -75,7 +83,7 @@ export async function unggahGambarTokoh(
   const meta = await sharp(bytes).metadata().catch(() => null);
   if (!meta?.format || !["jpeg", "png", "webp"].includes(meta.format)) return { ok: false, error: "Gambar harus berformat JPG, PNG, atau WebP", status: 400 };
   try {
-    return { ok: true, tokoh: await simpanGambarTokoh(admin, userId, comicId, tokohId, jenis, bytes) };
+    return { ok: true, tokoh: await simpanGambarTokoh(admin, userId, comicId, tokohId, jenis, bytes, "unggah") };
   } catch (e) {
     console.error("unggahGambarTokoh gagal", tokohId, e);
     return { ok: false, error: "Gagal menyimpan gambar. Coba lagi.", status: 500 };
@@ -109,6 +117,7 @@ export async function buatGambarTokoh(
   });
   if (payError || !paid) return { ok: false, error: payError ? "Gagal memproses kredit" : `Kredit tidak cukup (butuh ${GAMBAR_TOKOH_COST})`, status: 402 };
 
+  const provider = await getImageProvider();
   const pemakaian: Pemakaian[] = [];
   try {
     const gaya = GAYA.find((g) => g.id === comic.gaya) ?? GAYA[0];
@@ -124,9 +133,9 @@ export async function buatGambarTokoh(
     }
 
     const hasil = await rekamPemakaian(pemakaian, () =>
-      getImageProvider().generatePortrait({ nama: tokoh.nama, deskripsi: tokoh.deskripsi, gaya: gaya.prompt, bentuk: jenis, referenceImages }),
+      provider.generatePortrait({ nama: tokoh.nama, deskripsi: tokoh.deskripsi, gaya: gaya.prompt, bentuk: jenis, referenceImages }),
     );
-    const daftar = await simpanGambarTokoh(admin, userId, comicId, tokohId, jenis, hasil.image);
+    const daftar = await simpanGambarTokoh(admin, userId, comicId, tokohId, jenis, hasil.image, "ai");
 
     await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: `${jenis}-tokoh`, provider: hasil.provider, status: "selesai" }));
     const { data: profil } = await admin.from("users").select("saldo_kredit").eq("id", userId).single();
@@ -134,7 +143,7 @@ export async function buatGambarTokoh(
   } catch (e) {
     console.error("buatGambarTokoh gagal", tokohId, jenis, e);
     await admin.rpc("refund_credits", { p_user: userId, p_amount: GAMBAR_TOKOH_COST, p_alasan: `refund ${jenis} tokoh gagal`, p_ref: comicId });
-    await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: `${jenis}-tokoh`, provider: getImageProvider().name, status: "gagal" }));
+    await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: `${jenis}-tokoh`, provider: provider.name, status: "gagal" }));
     return kuotaHabis(e)
       ? { ok: false, error: PESAN_KUOTA, status: 503 }
       : { ok: false, error: `Gagal membuat ${jenis === "potret" ? "potret" : "badan penuh"}. Kredit sudah dikembalikan, silakan coba lagi.`, status: 500 };

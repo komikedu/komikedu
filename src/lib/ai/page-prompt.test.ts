@@ -26,6 +26,25 @@ describe("buildPagePrompt", () => {
     expect(p).not.toContain("gambar referensi");
   });
 
+  it("tokoh yang punya potret mengikuti gambar acuan, bukan deskripsi teks yang bisa bertentangan", () => {
+    const p = buildPagePrompt({
+      ...req,
+      karakter: [
+        { nama: "Joko", deskripsi: "anak laki-laki rambut panjang merah" },
+        { nama: "Kiki", deskripsi: "anak perempuan, rambut dikuncir dua" },
+      ],
+      referenceImages: [
+        { data: new Uint8Array(1), mimeType: "image/webp", label: "potret tokoh Joko", tokoh: "joko" },
+        { data: new Uint8Array(1), mimeType: "image/webp", label: "halaman komik sebelumnya" },
+      ],
+    });
+    expect(p).toContain("- Joko: wajah, jenis kelamin, rambut, kacamata, dan pakaian PERSIS seperti gambar referensi 1");
+    expect(p).toContain("Bila catatan teks ini berbeda dari gambar, ikuti gambar. Catatan: anak laki-laki rambut panjang merah");
+    // tokoh tanpa potret tetap memakai deskripsi biasa
+    expect(p).toContain("- Kiki: anak perempuan, rambut dikuncir dua");
+    expect(p).toMatch(/IDENTIK di semua panel/);
+  });
+
   it("menyebut gambar referensi beserta labelnya, berurutan", () => {
     const p = buildPagePrompt({
       ...req,

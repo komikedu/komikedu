@@ -4,13 +4,14 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { ImagePlus, Loader2, Sparkles, Upload, X } from "lucide-react";
 import { gambarTokoh, isPresetId, type Tokoh } from "@/lib/comics/tokoh";
+import type { GaleriItem } from "@/lib/comics/galeri-tokoh";
 import { simpanTokoh } from "./actions";
 
 const COST = 1;
 const MAX_BYTES = 5 * 1024 * 1024;
 
 type Jenis = "potret" | "badan";
-type Busy = null | "simpan" | "unggah" | Jenis;
+type Busy = null | "simpan" | "unggah" | "pasang" | Jenis;
 
 /** Gambar yang tampil untuk tab ini: potret tokoh siap pakai ada di /public, selebihnya URL di penyimpanan. */
 function gambarUntuk(t: Tokoh, jenis: Jenis, gaya: string | null): string | null {
@@ -47,12 +48,28 @@ export function TokohDetail({
   const [busy, setBusy] = useState<Busy>(null);
   const [pesan, setPesan] = useState<{ ok: boolean; teks: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [galeri, setGaleri] = useState<GaleriItem[]>([]);
+  const gambarAktif = t ? gambarUntuk(t, tab, gaya) : null;
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && busy === null && onClose();
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, [busy, onClose]);
+
+  // galeri dimuat ulang tiap gambar aktif berubah (hasil buat, unggah, atau pasang dari galeri)
+  useEffect(() => {
+    let batal = false;
+    fetch(`/api/comics/${comicId}/tokoh/${encodeURIComponent(tokohId)}/galeri?jenis=${tab}`)
+      .then((r) => r.json())
+      .then((j: { ok: boolean; gambar?: GaleriItem[] }) => {
+        if (!batal && j.ok && j.gambar) setGaleri(j.gambar);
+      })
+      .catch(() => {});
+    return () => {
+      batal = true;
+    };
+  }, [comicId, tokohId, tab, gambarAktif]);
 
   if (!t) return null;
   const preset = t.preset && isPresetId(t.id);
@@ -73,7 +90,29 @@ export function TokohDetail({
     }
   }
 
-  /** Simpan deskripsi baru. Gambar lama dibuang dari data tokoh karena penampilannya sudah tidak cocok. */
+  /** Pasang gambar dari galeri sebagai gambar aktif tokoh (tanpa kredit). */
+  async function pasang(g: GaleriItem) {
+    if (g.url === gambarAktif) return;
+    await jalankan("pasang", async () => {
+      const res = await fetch(`/api/comics/${comicId}/tokoh/${encodeURIComponent(t!.id)}/galeri`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ gambarId: g.id }),
+      });
+      const json = (await res.json().catch(() => null)) as { ok: true; tokoh: Tokoh[] } | { ok: false; error: string } | null;
+      if (res.ok && json?.ok) {
+        setTokoh(json.tokoh);
+        setPesan({ ok: true, teks: `${labelTab[tab]} dari galeri dipasang untuk ${t!.nama}.` });
+      } else {
+        setPesan({ ok: false, teks: json && !json.ok ? json.error : "Gagal memasang gambar. Coba lagi." });
+      }
+    });
+  }
+
+  /**
+   * Simpan deskripsi baru. Penampilan berubah, jadi potret dan badan penuh aktif dilepas dari tokoh (supaya tidak
+   * bertentangan dengan deskripsi baru), tetapi tetap ada di galeri dan bisa dipasang lagi.
+   */
   async function simpanDeskripsi(): Promise<Tokoh | null> {
     const baru = draf.trim();
     if (!baru || baru === t!.deskripsi) return t!;
@@ -129,7 +168,7 @@ export function TokohDetail({
   async function simpanSaja() {
     await jalankan("simpan", async () => {
       const hasil = await simpanDeskripsi();
-      if (hasil) setPesan({ ok: true, teks: "Deskripsi tersimpan. Gambar lama tokoh ini dibuang; buat gambar baru agar sesuai." });
+      if (hasil) setPesan({ ok: true, teks: "Deskripsi tersimpan. Potret dan badan penuh lama dilepas dari tokoh tetapi tetap ada di galeri; buat gambar baru agar sesuai, atau pasang lagi dari galeri." });
     });
   }
 
@@ -156,7 +195,7 @@ export function TokohDetail({
         <div className="flex min-h-0 flex-1 flex-col bg-neutral-900 p-4">
           <div className="relative h-[min(60vh,520px)] w-full overflow-hidden rounded-xl bg-neutral-800 md:h-[min(70vh,560px)]">
             {gambar ? (
-              <Image src={gambar} alt={`${labelTab[tab]} ${t.nama}`} fill unoptimized className="object-contain" />
+              <Image src={gambar} alt={`${labelTab[tab]} ${t.nama}`} fill unoptimized crossOrigin="anonymous" className="object-contain" />
             ) : (
               <div className="absolute inset-0 grid place-items-center p-6 text-center text-white">
                 <div>
@@ -168,7 +207,7 @@ export function TokohDetail({
             {sibuk && busy !== "simpan" && (
               <div role="status" className="absolute inset-0 grid place-items-center bg-black/60 text-white">
                 <p className="flex items-center gap-2 text-sm">
-                  <Loader2 size={18} className="animate-spin" /> {busy === "unggah" ? "Mengunggah..." : `Membuat ${labelTab[busy as Jenis].toLowerCase()}... biasanya 10 sampai 40 detik`}
+                  <Loader2 size={18} className="animate-spin" /> {busy === "unggah" ? "Mengunggah..." : busy === "pasang" ? "Memasang gambar..." : `Membuat ${labelTab[busy as Jenis].toLowerCase()}... biasanya 10 sampai 40 detik`}
                 </p>
               </div>
             )}
@@ -187,7 +226,7 @@ export function TokohDetail({
                   className={`flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm ${tab === j ? "bg-white text-gray-900" : "bg-neutral-800 text-white hover:bg-neutral-700"}`}
                 >
                   <span className="relative h-7 w-7 shrink-0 overflow-hidden rounded bg-neutral-700">
-                    {g && <Image src={g} alt="" fill unoptimized className="object-cover object-top" />}
+                    {g && <Image src={g} alt="" fill unoptimized crossOrigin="anonymous" className="object-cover object-top" />}
                   </span>
                   {labelTab[j]}
                 </button>
@@ -225,6 +264,32 @@ export function TokohDetail({
           </div>
           {!bisaDiubah && <p className="mt-2 text-center text-xs text-white/60">Potret tokoh siap pakai tidak bisa diganti. Ubah jadi tokoh sendiri untuk menggantinya.</p>}
           {kurang && bisaDiubah && <p className="mt-2 text-center text-xs text-amber-300">Kredit tidak cukup untuk membuat dengan AI. Unggah gambar sendiri tidak memakai kredit.</p>}
+
+          {/* galeri: semua gambar yang pernah dibuat atau diunggah untuk tokoh ini, tidak ada yang dibuang */}
+          {galeri.length > 0 && (
+            <div className="mt-3 w-full">
+              <p className="text-xs text-white/70">
+                Galeri {labelTab[tab].toLowerCase()} ({galeri.length}). Klik gambar untuk memasangnya.
+              </p>
+              <ul aria-label={`Galeri ${labelTab[tab].toLowerCase()}`} className="mt-1.5 flex gap-2 overflow-x-auto pb-1">
+                {galeri.map((g, i) => (
+                  <li key={g.id} className="shrink-0">
+                    <button
+                      type="button"
+                      disabled={sibuk}
+                      aria-pressed={g.url === gambarAktif}
+                      aria-label={`${labelTab[tab]} ${galeri.length - i}${g.url === gambarAktif ? ", sedang dipakai" : ""}`}
+                      title={g.sumber === "unggah" ? "Unggahan Anda" : "Dibuat AI"}
+                      onClick={() => void pasang(g)}
+                      className={`relative block h-16 w-16 overflow-hidden rounded-lg bg-neutral-800 ${g.url === gambarAktif ? "ring-2 ring-brand" : "opacity-80 hover:opacity-100"}`}
+                    >
+                      <Image src={g.url} alt="" fill unoptimized crossOrigin="anonymous" className="object-cover object-top" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {/* deskripsi dan aksi */}
@@ -286,7 +351,7 @@ export function TokohDetail({
                   <ImagePlus size={13} /> Simpan dan buat
                 </button>
               </div>
-              {berubah && <p className="mt-2 text-[11px] text-amber-700">Mengubah deskripsi membuang potret dan badan penuh lama karena sudah tidak cocok.</p>}
+              {berubah && <p className="mt-2 text-[11px] text-amber-700">Mengubah deskripsi melepas potret dan badan penuh yang sedang dipakai (supaya tidak bertentangan). Gambar lamanya tetap ada di galeri.</p>}
             </>
           )}
 

@@ -23,3 +23,20 @@ describe("mention tokoh", () => {
     expect(sisipkanMention("@Jo melihat", 0, 3, "Joko")).toEqual({ teks: "Joko melihat", kursor: 4 });
   });
 });
+
+describe("pecahNama", () => {
+  it("menandai nama tokoh sebagai kata utuh, apa pun huruf besar-kecilnya", async () => {
+    const { pecahNama } = await import("./mention");
+    const hasil = pecahNama("joko dan Budi bermain, Jokowi lewat", ["Joko", "Budi"]);
+    expect(hasil.filter((p) => p.tokoh).map((p) => p.teks)).toEqual(["joko", "Budi"]);
+    expect(hasil.map((p) => p.teks).join("")).toBe("joko dan Budi bermain, Jokowi lewat");
+  });
+
+  it("nama yang lebih panjang didahulukan dan karakter khusus aman", async () => {
+    const { pecahNama } = await import("./mention");
+    expect(pecahNama("Bu Rina menulis", ["Bu", "Bu Rina"]).filter((p) => p.tokoh).map((p) => p.teks)).toEqual(["Bu Rina"]);
+    expect(pecahNama("a.b (c)", ["a.b"]).filter((p) => p.tokoh)).toHaveLength(1);
+    expect(pecahNama("tanpa tokoh", [])).toEqual([{ teks: "tanpa tokoh", tokoh: false }]);
+    expect(pecahNama("", ["Joko"])).toEqual([{ teks: "", tokoh: false }]);
+  });
+});

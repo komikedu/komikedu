@@ -8,6 +8,7 @@ import { kuotaHabis, PESAN_KUOTA } from "@/lib/ai/galat";
 import { barisGenerations, rekamPemakaian, type Pemakaian } from "@/lib/ai/usage";
 import { GAYA } from "@/lib/comics/schema";
 import { potretTokoh, punyaPotret } from "@/lib/comics/referensi-tokoh";
+import { catatVersi } from "@/lib/comics/versi-gambar";
 import { ambilGambar, kunciKomik, simpanGambar } from "@/lib/storage/gambar";
 import type { Tokoh } from "@/lib/comics/tokoh";
 
@@ -63,6 +64,7 @@ export async function editPanelImage(
     return { ok: false, error: payError ? "Gagal memproses kredit" : `Kredit tidak cukup (butuh ${EDIT_COST})`, status: 402 };
   }
 
+  const provider = await getImageProvider();
   const pemakaian: Pemakaian[] = [];
   try {
     const asli = await ambilGambar(admin, panel.image_url!);
@@ -81,7 +83,7 @@ export async function editPanelImage(
     );
 
     const hasil = await rekamPemakaian(pemakaian, () =>
-      getImageProvider().editPanel({
+      provider.editPanel({
         image: { data: bytesAsli, mimeType: asli.mimeType },
         instruksi,
         gaya: gaya.prompt,
@@ -99,6 +101,7 @@ export async function editPanelImage(
     const imageUrl = await simpanGambar(admin, baru, gambar, "image/webp");
     const { error } = await admin.from("panels").update({ image_url: imageUrl, status: "selesai" }).eq("id", panelId);
     if (error) throw error;
+    await catatVersi(admin, panelId, imageUrl, "edit");
 
     await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "edit-panel", provider: hasil.provider, status: "selesai" }));
     const { data: profil } = await admin.from("users").select("saldo_kredit").eq("id", userId).single();
@@ -107,7 +110,7 @@ export async function editPanelImage(
     console.error("editPanelImage gagal", panelId, e);
     await admin.rpc("refund_credits", { p_user: userId, p_amount: EDIT_COST, p_alasan: "refund edit panel gagal", p_ref: panelId });
     await admin.from("panels").update({ status: "selesai" }).eq("id", panelId);
-    await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "edit-panel", provider: getImageProvider().name, status: "gagal" }));
+    await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "edit-panel", provider: provider.name, status: "gagal" }));
     const diblokir = e instanceof Error && /diblokir|tidak mengembalikan gambar/i.test(e.message);
     return {
       ok: false,

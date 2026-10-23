@@ -17,6 +17,28 @@ export function saringNama(nama: string[], query: string): string[] {
   return nama.filter((n) => !q || n.toLowerCase().split(/\s+/).some((k) => k.startsWith(q)) || n.toLowerCase().startsWith(q));
 }
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Pecah teks menjadi potongan biasa dan potongan nama tokoh (kata utuh, tanpa peduli huruf besar-kecil),
+ * untuk memberi tanda warna pada nama tokoh di kolom adegan. Nama yang lebih panjang didahulukan ("Bu Rina" sebelum "Bu").
+ * Menggabungkan semua potongan selalu menghasilkan teks asli.
+ */
+export function pecahNama(teks: string, nama: string[]): { teks: string; tokoh: boolean }[] {
+  const daftar = [...new Set(nama.map((n) => n.trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
+  if (!teks || !daftar.length) return [{ teks, tokoh: false }];
+  const pola = new RegExp(`(?<![\\p{L}\\d])(?:${daftar.map(escapeRe).join("|")})(?![\\p{L}\\d])`, "giu");
+  const hasil: { teks: string; tokoh: boolean }[] = [];
+  let akhir = 0;
+  for (const m of teks.matchAll(pola)) {
+    if (m.index > akhir) hasil.push({ teks: teks.slice(akhir, m.index), tokoh: false });
+    hasil.push({ teks: m[0], tokoh: true });
+    akhir = m.index + m[0].length;
+  }
+  if (akhir < teks.length) hasil.push({ teks: teks.slice(akhir), tokoh: false });
+  return hasil;
+}
+
 /** Ganti "@query" dengan nama tokoh dan spasi; kembalikan teks baru dan posisi kursor. */
 export function sisipkanMention(teks: string, awal: number, kursor: number, nama: string): { teks: string; kursor: number } {
   const setelah = teks.slice(kursor);

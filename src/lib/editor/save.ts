@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { catatVersi } from "@/lib/comics/versi-gambar";
 import { EditorPayloadSchema, panelSalinan, toRows } from "./persist";
 
 export type SaveResult = { ok: true } | { ok: false; error: string; status: number };
@@ -65,6 +66,9 @@ async function salinGambar(admin: SupabaseClient, comicId: string, salinan: { id
   for (const t of tujuan ?? []) {
     const dari = salinan.find((s) => s.id === t.id)?.dari;
     const image_url = dari ? url.get(dari) : undefined;
-    if (image_url) await admin.from("panels").update({ image_url, status: "selesai" }).eq("id", t.id);
+    if (image_url) {
+      await admin.from("panels").update({ image_url, status: "selesai" }).eq("id", t.id);
+      await catatVersi(admin, t.id, image_url, "salinan");
+    }
   }
 }

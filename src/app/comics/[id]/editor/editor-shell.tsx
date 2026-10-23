@@ -1,12 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Apple,
   ChevronDown,
   Copy,
+  Download,
   Eye,
   EyeOff,
   FilePlus,
@@ -34,6 +36,8 @@ import type { BubbleKind, EditorPage } from "@/lib/editor/types";
 import type { Tokoh } from "@/lib/comics/tokoh";
 import { AdeganInput, NamaTokohContext } from "./adegan-input";
 import { TokohTab } from "./tokoh-tab";
+import { TombolTerbit } from "./tombol-terbit";
+import { useVersiGambar } from "./use-versi-gambar";
 
 const EditorCanvas = dynamic(() => import("./editor-canvas"), {
   ssr: false,
@@ -66,6 +70,60 @@ function thumbHalaman(page: EditorPage): HalamanThumb {
   return {
     panels: page.panels.filter((p) => p.visible).map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h, corners: p.corners ?? undefined, gambar: p.imageRect ?? undefined, imageUrl: p.imageUrl })),
   };
+}
+
+/** Unduh seluruh komik sebagai PDF. Dirender di browser dari isi editor saat ini, jadi hasilnya sama dengan yang terlihat. */
+function TombolEkspor({ judul, fontFamily }: { judul: string; fontFamily: string }) {
+  const [kemajuan, setKemajuan] = useState<{ selesai: number; total: number } | null>(null);
+  const [galat, setGalat] = useState<string | null>(null);
+
+  async function ekspor() {
+    const pages = useEditor.getState().pages;
+    setGalat(null);
+    setKemajuan({ selesai: 0, total: pages.length });
+    try {
+      const [{ eksporKomikKePdf }, { namaBerkasPdf }] = await Promise.all([import("./render-halaman"), import("@/lib/editor/ekspor-pdf")]);
+      const bytes = await eksporKomikKePdf(pages, judul, fontFamily, (selesai, total) => setKemajuan({ selesai, total }));
+      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = namaBerkasPdf(judul);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      console.error("ekspor PDF gagal", e);
+      const gambarGagal = (e instanceof Error && e.message === "GAMBAR_GAGAL") || (e instanceof DOMException && e.name === "SecurityError");
+      setGalat(
+        gambarGagal
+          ? "Ada gambar yang tidak bisa dimuat untuk diekspor. Periksa koneksi, lalu coba lagi. Bila terus gagal, aturan CORS bucket gambar mungkin belum benar."
+          : "Gagal membuat PDF. Coba lagi.",
+      );
+    } finally {
+      setKemajuan(null);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => void ekspor()}
+        disabled={kemajuan !== null}
+        title="Unduh seluruh komik sebagai PDF"
+        className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-brand-foreground disabled:opacity-60"
+      >
+        {kemajuan ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+        {kemajuan ? `Halaman ${Math.min(kemajuan.selesai + 1, kemajuan.total)}/${kemajuan.total}` : "Ekspor PDF"}
+      </button>
+      {galat && (
+        <p role="alert" className="absolute right-0 top-full z-30 mt-2 w-64 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700 shadow-lg">
+          {galat}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function PagesPanel() {
@@ -279,6 +337,7 @@ type EditAiProps = {
   sibuk: string | null;
   /** kembalikan pesan galat, atau null bila berhasil */
   onEdit: (panelId: string, instruksi: string) => Promise<string | null>;
+  comicId?: string;
 };
 
 function EditAiSection({ panelId, ai }: { panelId: string; ai: EditAiProps }) {
@@ -327,7 +386,7 @@ function EditAiSection({ panelId, ai }: { panelId: string; ai: EditAiProps }) {
       {jalan && <p role="status" className="mt-2 text-xs text-gray-600">Biasanya 15 sampai 40 detik.</p>}
       {kurang && !jalan && <p className="mt-2 text-xs text-amber-700">Kredit tidak cukup.</p>}
       {!ai.tersimpan && <p className="mt-2 text-xs text-gray-500">Hanya tersedia di komik yang tersimpan.</p>}
-      {berhasil && <p role="status" className="mt-2 text-xs text-emerald-700">Gambar diperbarui. Belum pas? Tulis perintah lain untuk memperbaikinya.</p>}
+      {berhasil && <p role="status" className="mt-2 text-xs text-emerald-700">Gambar diperbarui. Belum pas? Tulis perintah lain, atau kembali ke gambar sebelumnya dengan tombol panah di atas panel.</p>}
       {error && (
         <p role="alert" className="mt-2 rounded bg-red-50 p-2 text-xs text-red-700">
           {error}
@@ -356,7 +415,8 @@ function PageTab({ page, gen }: { page: EditorPage; gen: GenerateProps }) {
                 label={`Adegan panel ${i + 1}`}
                 value={p.adegan}
                 onChange={(v) => updatePanel(p.id, { adegan: v })}
-                className={`mt-1 ${p.adegan.trim() ? "" : "border-amber-300"}`}
+                className="mt-1"
+                peringatan={!p.adegan.trim()}
               />
               {jumlahBendaDiAdegan(p.adegan).length > 0 && (
                 <p className="mt-1 text-xs text-amber-800">
@@ -399,6 +459,7 @@ function PageTab({ page, gen }: { page: EditorPage; gen: GenerateProps }) {
           {gen.generating ? "Membuat gambar..." : `${sudahAdaGambar ? "Buat ulang gambar" : "Buat gambar halaman"} · ${GAMBAR_COST} kredit`}
         </button>
         {gen.generating && <p role="status" className="mt-2 text-xs text-gray-600">Biasanya 20 sampai 60 detik. Jangan tutup halaman ini.</p>}
+        {sudahAdaGambar && !gen.generating && <p className="mt-2 text-xs text-gray-500">Gambar lama tidak hilang: pilih sebuah panel, lalu pakai tombol panah ‹ › di toolbar untuk kembali ke versi sebelumnya.</p>}
         {!gen.tersimpan && <p className="mt-2 text-xs text-gray-500">Hanya tersedia di komik yang tersimpan.</p>}
         {tanpaAdegan >= 0 && <p className="mt-2 text-xs text-amber-700">Panel {tanpaAdegan + 1} belum punya adegan. Pilih panelnya lalu isi adegan.</p>}
         {kurang && <p className="mt-2 text-xs text-danger">Kredit tidak cukup.</p>}
@@ -412,6 +473,40 @@ function PageTab({ page, gen }: { page: EditorPage; gen: GenerateProps }) {
   );
 }
 
+/** Galeri gambar sebuah panel: semua versi yang pernah dipakai, klik untuk memasang kembali. Tidak ada yang dibuang. */
+function RiwayatGambar({ riwayat }: { riwayat: ReturnType<typeof useVersiGambar> }) {
+  const { versi, index, pasang, sibuk, galat } = riwayat;
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <p className="font-semibold">Riwayat gambar ({versi.length})</p>
+      <p className="mt-1 text-xs text-gray-500">Semua gambar panel ini tersimpan. Klik untuk memasang kembali, tanpa kredit.</p>
+      <ul aria-label="Riwayat gambar panel" className="mt-2 grid grid-cols-3 gap-2">
+        {versi.map((v, i) => (
+          <li key={v.id}>
+            <button
+              type="button"
+              disabled={sibuk}
+              aria-pressed={i === index}
+              aria-label={`Versi ${i + 1}${i === index ? ", sedang dipakai" : ""}`}
+              title={v.sumber === "edit" ? "Hasil edit AI" : v.sumber === "salinan" ? "Salinan dari panel lain" : "Hasil buat gambar halaman"}
+              onClick={() => void pasang(v)}
+              className={`relative block aspect-[3/4] w-full overflow-hidden rounded-md bg-surface-muted ${i === index ? "ring-2 ring-brand" : "hover:ring-2 hover:ring-line"}`}
+            >
+              <Image src={v.url} alt="" fill unoptimized crossOrigin="anonymous" className="object-cover" />
+              <span className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 text-[10px] text-white">{i + 1}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {galat && (
+        <p role="alert" className="mt-2 text-xs text-red-700">
+          {galat}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function PanelTab({ ai }: { ai: EditAiProps }) {
   const panel = useEditor(selectSelectedPanel);
   const page = useEditor((s) => s.pages.find((p) => p.id === s.activePageId));
@@ -419,6 +514,7 @@ function PanelTab({ ai }: { ai: EditAiProps }) {
   const dup = useEditor((s) => s.duplicatePanel);
   const del = useEditor((s) => s.deletePanel);
   const updatePanel = useEditor((s) => s.updatePanel);
+  const riwayat = useVersiGambar(ai.comicId, panel?.id ?? null, panel?.imageUrl ?? null);
   if (!panel || !page) return null;
   const nomor = page.panels.findIndex((p) => p.id === panel.id) + 1;
   const penuh = page.panels.length >= MAX_PANELS_PER_PAGE;
@@ -438,6 +534,7 @@ function PanelTab({ ai }: { ai: EditAiProps }) {
         <AdeganInput label="Adegan panel" rows={4} value={panel.adegan} onChange={(v) => updatePanel(panel.id, { adegan: v })} className="mt-1" />
       </div>
       {panel.imageUrl && <EditAiSection key={panel.id} panelId={panel.id} ai={ai} />}
+      {panel.imageUrl && riwayat.versi.length > 0 && <RiwayatGambar riwayat={riwayat} />}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" disabled={penuh} onClick={() => split(panel.id, "horizontal")} className={btn}>
           Bagi kiri-kanan
@@ -730,6 +827,8 @@ export function EditorShell({
   tokoh = [],
   gaya = null,
   karakter = [],
+  terbit = { terbit: false, deskripsi: "" },
+  penulis = "Guru KomikEdu",
 }: {
   comicId?: string;
   title: string;
@@ -740,6 +839,10 @@ export function EditorShell({
   gaya?: string | null;
   /** lembar karakter komik (karakter_json) */
   karakter?: { nama: string; deskripsi: string }[];
+  /** status komunitas komik (diterbitkan atau belum, dan deskripsi publiknya) */
+  terbit?: { terbit: boolean; deskripsi: string };
+  /** nama profil yang tampil sebagai penulis di komunitas */
+  penulis?: string;
 }) {
   const init = useEditor((s) => s.init);
   const page = useEditor((s) => s.pages.find((p) => p.id === s.activePageId));
@@ -948,9 +1051,10 @@ export function EditorShell({
               <p className="text-xs text-gray-500">Pratinjau, tidak disimpan</p>
             )}
           </div>
-          <button type="button" disabled title="Ekspor PDF segera hadir" className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-brand-foreground opacity-50">
-            Ekspor
-          </button>
+          <div className="flex items-center gap-1.5">
+            <TombolTerbit comicId={comicId} awal={terbit} penulis={penulis} fontFamily={fontFamily} simpanDulu={save.simpanSekarang} />
+            <TombolEkspor judul={title} fontFamily={fontFamily} />
+          </div>
         </div>
         <PagesPanel />
         <LayersPanel />
@@ -960,7 +1064,7 @@ export function EditorShell({
         <Link href="/dashboard" className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-surface px-4 py-1.5 text-sm shadow">
           <Home size={14} /> Dashboard
         </Link>
-        <EditorCanvas fontFamily={fontFamily} generating={generatingPage === page.id} />
+        <EditorCanvas fontFamily={fontFamily} generating={generatingPage === page.id} comicId={comicId} />
 
         <div role="toolbar" aria-label="Alat" className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-surface p-1.5 shadow-lg">
           <ToolButton label="Pilih" active={tool === "move"} onClick={() => setTool("move")}>
@@ -1040,6 +1144,7 @@ export function EditorShell({
                 saldo,
                 sibuk: editingPanel ?? generatingPage,
                 onEdit: editPanelAi,
+                comicId,
               }}
             />
           )}

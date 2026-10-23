@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ambilGambar, kunciKomik } from "@/lib/storage/gambar";
 import { gambarTokoh, isPresetId, type Tokoh } from "./tokoh";
 
-export type GambarReferensi = { data: Uint8Array; mimeType: string; label: string };
+export type GambarReferensi = { data: Uint8Array; mimeType: string; label: string; tokoh?: string };
 
 /** Tokoh yang punya potret: preset (di /public) atau tokoh buatan sendiri yang sudah dibuatkan potret AI. */
 export const punyaPotret = (t: Tokoh) => (t.preset && isPresetId(t.id)) || !!t.potret || !!t.badan;
@@ -25,12 +25,12 @@ export async function potretTokoh(
     if (t.preset && isPresetId(t.id)) {
       if (!assetOrigin) return null;
       const r = await fetch(`${assetOrigin}${gambarTokoh(t.id, gaya)}`);
-      return r.ok ? { data: new Uint8Array(await r.arrayBuffer()), mimeType: r.headers.get("content-type") ?? "image/webp", label } : null;
+      return r.ok ? { data: new Uint8Array(await r.arrayBuffer()), mimeType: r.headers.get("content-type") ?? "image/webp", label, tokoh: t.nama } : null;
     }
     const url = t.potret ?? t.badan;
     if (!url || !kunciKomik(url, userId, comicId)) return null;
     const g = await ambilGambar(admin, url);
-    return g ? { ...g, label } : null;
+    return g ? { ...g, label, tokoh: t.nama } : null;
   } catch {
     return null; // referensi hanya membantu; gagal mengambil tidak menggagalkan pembuatan gambar
   }

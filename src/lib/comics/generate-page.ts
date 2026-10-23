@@ -7,6 +7,7 @@ import { getImageProvider } from "@/lib/ai/image-providers";
 import { kuotaHabis, PESAN_KUOTA } from "@/lib/ai/galat";
 import { barisGenerations, rekamPemakaian, type Pemakaian } from "@/lib/ai/usage";
 import { GAYA } from "@/lib/comics/schema";
+import { catatVersi } from "@/lib/comics/versi-gambar";
 import { simpanGambar } from "@/lib/storage/gambar";
 import { potretTokoh, punyaPotret } from "@/lib/comics/referensi-tokoh";
 import { sheetCocok, tambahTokohDariSheet, type Tokoh } from "@/lib/comics/tokoh";
@@ -83,6 +84,7 @@ export async function generatePageImage(
     return { ok: false, error: payError ? "Gagal memproses kredit" : `Kredit tidak cukup (butuh ${GAMBAR_COST})`, status: 402 };
   }
 
+  const provider = await getImageProvider();
   const pemakaian: Pemakaian[] = [];
   try {
     const gaya = GAYA.find((g) => g.id === comic.gaya) ?? GAYA[0];
@@ -129,11 +131,15 @@ export async function generatePageImage(
       .join(" ")
       .toLowerCase();
     const tampil = tokoh.filter((t) => punyaPotret(t) && teksHalaman.includes(t.nama.toLowerCase()));
-    const slotTokoh = refHalaman ? 2 : 3;
+    // potret tokoh didahulukan (maks. 3 gambar acuan): hanya itu yang menentukan wajah. Halaman sebelumnya hanya
+    // menambah kesamaan gaya, dan dipakai kalau masih ada tempat, karena tokoh di sana bisa saja tidak konsisten
+    const slotTokoh = 3;
     const referenceImages = (
       await Promise.all([
         ...tampil.slice(0, slotTokoh).map((t) => potretTokoh(admin, userId, comicId, t, comic.gaya, assetOrigin)),
-        ...(refHalaman ? [ambil(refHalaman, "halaman pertama komik ini (ikuti desain tokoh dan gaya gambarnya)")] : []),
+        ...(refHalaman && tampil.slice(0, slotTokoh).length < 3
+          ? [ambil(refHalaman, "halaman komik sebelumnya (hanya untuk kesamaan gaya gambar dan suasana; wajah tokoh ikuti potret masing-masing)")]
+          : []),
       ])
     ).filter((r): r is NonNullable<typeof r> => r !== null);
 
@@ -142,7 +148,7 @@ export async function generatePageImage(
       return { x: pos.x / PAGE_W, y: pos.y / PAGE_H, w: pos.w / PAGE_W, h: pos.h / PAGE_H };
     });
     const hasil = await rekamPemakaian(pemakaian, () =>
-      getImageProvider().generatePage({
+      provider.generatePage({
         gaya: gaya.prompt,
         karakter,
         referenceImages,
@@ -173,6 +179,7 @@ export async function generatePageImage(
     for (const u of uploaded) {
       const { error } = await admin.from("panels").update({ image_url: u.imageUrl, status: "selesai" }).eq("id", u.id);
       if (error) throw error;
+      await catatVersi(admin, u.id, u.imageUrl, "halaman");
     }
     await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "gambar", provider: hasil.provider, status: "selesai" }));
     const { data: profil } = await admin.from("users").select("saldo_kredit").eq("id", userId).single();
@@ -181,7 +188,7 @@ export async function generatePageImage(
     console.error("generatePageImage gagal", pageId, e);
     await admin.rpc("refund_credits", { p_user: userId, p_amount: GAMBAR_COST, p_alasan: "refund gambar gagal", p_ref: pageId });
     await admin.from("panels").update({ status: "gagal" }).eq("page_id", pageId);
-    await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "gambar", provider: getImageProvider().name, status: "gagal" }));
+    await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: userId, jenis: "gambar", provider: provider.name, status: "gagal" }));
     const diblokir = e instanceof Error && /diblokir|tidak mengembalikan gambar/i.test(e.message);
     return {
       ok: false,

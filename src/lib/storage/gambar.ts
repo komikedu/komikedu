@@ -1,5 +1,5 @@
 import "server-only";
-import { DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { pathPanel } from "@/lib/comics/storage-path";
 
@@ -73,6 +73,31 @@ export async function simpanGambar(admin: SupabaseClient, key: string, bytes: Ui
   return admin.storage.from("panels").getPublicUrl(key).data.publicUrl;
 }
 
+/** URL publik sebuah kunci objek (tanpa mengunggah apa pun). */
+export function urlGambar(admin: SupabaseClient, key: string): string {
+  const bucket = getR2();
+  return bucket ? `${bucket.publicUrl}/${encodeKunci(key)}` : admin.storage.from("panels").getPublicUrl(key).data.publicUrl;
+}
+
+/** Apakah berkas dengan kunci ini sudah ada di penyimpanan aktif. */
+export async function adaBerkas(admin: SupabaseClient, key: string): Promise<boolean> {
+  const bucket = getR2();
+  if (bucket) {
+    try {
+      await bucket.client.send(new HeadObjectCommand({ Bucket: bucket.bucket, Key: key }));
+      return true;
+    } catch (e) {
+      const nama = (e as { name?: string; $metadata?: { httpStatusCode?: number } });
+      if (nama.name === "NotFound" || nama.$metadata?.httpStatusCode === 404) return false;
+      throw e;
+    }
+  }
+  const dir = key.slice(0, key.lastIndexOf("/"));
+  const nama = key.slice(key.lastIndexOf("/") + 1);
+  const { data } = await admin.storage.from("panels").list(dir, { search: nama, limit: 5 });
+  return !!data?.some((f) => f.name === nama);
+}
+
 /** Unduh gambar dari URL (R2 atau Supabase). Panggil `kunciKomik` dulu untuk memastikan URL milik komik ini. */
 export async function ambilGambar(admin: SupabaseClient, url: string): Promise<{ data: Uint8Array; mimeType: string } | null> {
   const key = kunciDariUrl(url);
@@ -120,4 +145,39 @@ export async function hapusFolderKomik(admin: SupabaseClient, userId: string, co
     if (paths.length) await admin.storage.from("panels").remove(paths);
   };
   await Promise.allSettled([dariR2(), dariSupabase()]);
+}
+
+/**
+ * Hapus salinan terbit lama komik (berkas `rilis-*`), kecuali kunci di `pertahankan`. Dipakai setelah menerbitkan ulang
+ * (hanya rilis baru yang dipertahankan, termasuk sisa unggahan yang tidak jadi diterbitkan) dan saat komik ditarik
+ * (semua dihapus, karena alamat gambar publik tetap bisa dibuka siapa pun yang tahu URL-nya). Gagal tidak melempar galat.
+ */
+export async function bersihkanRilis(admin: SupabaseClient, userId: string, comicId: string, pertahankan: Set<string>): Promise<void> {
+  const folder = `${userId}/${comicId}`;
+  const bucket = getR2();
+  try {
+    let kunci: string[] = [];
+    if (bucket) {
+      let token: string | undefined;
+      do {
+        const list = await bucket.client.send(new ListObjectsV2Command({ Bucket: bucket.bucket, Prefix: `${folder}/rilis-`, ContinuationToken: token }));
+        kunci.push(...(list.Contents ?? []).flatMap((o) => (o.Key ? [o.Key] : [])));
+        token = list.IsTruncated ? list.NextContinuationToken : undefined;
+      } while (token);
+    } else {
+      const { data } = await admin.storage.from("panels").list(folder, { limit: 1000, search: "rilis-" });
+      kunci = (data ?? []).filter((f) => f.name.startsWith("rilis-")).map((f) => `${folder}/${f.name}`);
+    }
+    const hapus = kunci.filter((k) => !pertahankan.has(k));
+    if (!hapus.length) return;
+    if (bucket) {
+      for (let i = 0; i < hapus.length; i += 1000) {
+        await bucket.client.send(new DeleteObjectsCommand({ Bucket: bucket.bucket, Delete: { Objects: hapus.slice(i, i + 1000).map((Key) => ({ Key })), Quiet: true } }));
+      }
+    } else {
+      await admin.storage.from("panels").remove(hapus);
+    }
+  } catch (e) {
+    console.error("bersihkanRilis gagal", comicId, e);
+  }
 }

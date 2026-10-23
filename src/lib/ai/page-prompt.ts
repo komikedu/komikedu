@@ -22,13 +22,25 @@ export function buildPagePrompt(req: PageImageRequest): string {
         (p.karakter.length ? ` Karakter: ${p.karakter.join(", ")}.` : ""),
     )
     .join("\n");
-  const chars = req.karakter.map((k) => `- ${k.nama}: ${k.deskripsi}`).join("\n");
+  // tokoh yang punya potret: gambar acuan yang menentukan wajah, rambut, dan pakaian; deskripsi teks hanya catatan.
+  // Bila keduanya berbeda (mis. teks "rambut panjang", potret rambut pendek), model cenderung mencampur keduanya.
+  const refs = req.referenceImages ?? [];
+  const chars = req.karakter
+    .map((k) => {
+      const i = refs.findIndex((r) => r.tokoh?.toLowerCase() === k.nama.toLowerCase());
+      return i >= 0
+        ? `- ${k.nama}: wajah, jenis kelamin, rambut, kacamata, dan pakaian PERSIS seperti gambar referensi ${i + 1}. Bila catatan teks ini berbeda dari gambar, ikuti gambar. Catatan: ${k.deskripsi}`
+        : `- ${k.nama}: ${k.deskripsi}`;
+    })
+    .join("\n");
 
   return [
     `Gambar SATU halaman komik edukasi vertikal (rasio 3:4) untuk anak SD, gaya ${req.gaya}.`,
     `Tata letak: ${req.panels.length} panel pada posisi berikut, masing-masing berbingkai garis hitam dan dipisahkan celah putih.`,
     panels,
-    chars ? `Karakter harus tampil konsisten (wajah, rambut, pakaian sama di semua panel):\n${chars}` : "",
+    chars
+      ? `Setiap tokoh harus terlihat IDENTIK di semua panel (jenis kelamin, panjang dan warna rambut, kacamata, pakaian). Jangan menambah tokoh bernama selain yang disebut:\n${chars}`
+      : "",
     req.referenceImages?.length
       ? "Gambar referensi terlampir (urut): " +
         daftarReferensi(req.referenceImages, 1) +

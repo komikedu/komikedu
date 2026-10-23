@@ -10,7 +10,7 @@ export type PageImageRequest = {
   /** Deskripsi karakter yang muncul, agar wajah dan pakaian konsisten. */
   karakter: { nama: string; deskripsi: string }[];
   /** 1-3 gambar referensi (potret tokoh atau halaman sebelumnya), sudah dalam bentuk byte, dengan label isinya. */
-  referenceImages?: { data: Uint8Array; mimeType: string; label?: string }[];
+  referenceImages?: { data: Uint8Array; mimeType: string; label?: string; tokoh?: string }[];
   premium?: boolean;
 };
 
@@ -29,7 +29,7 @@ export type PanelEditRequest = {
   gaya: string;
   karakter: { nama: string; deskripsi: string }[];
   /** 0-2 potret tokoh sebagai referensi tambahan. */
-  referenceImages?: { data: Uint8Array; mimeType: string; label?: string }[];
+  referenceImages?: { data: Uint8Array; mimeType: string; label?: string; tokoh?: string }[];
 };
 
 export type PortraitRequest = {
@@ -40,7 +40,7 @@ export type PortraitRequest = {
   /** "potret" = setengah badan (kotak); "badan" = seluruh tubuh berdiri (3:4). Bawaan: potret. */
   bentuk?: "potret" | "badan";
   /** Opsional: halaman komik yang sudah dibuat, agar potret mengikuti tokoh yang sudah digambar. */
-  referenceImages?: { data: Uint8Array; mimeType: string; label?: string }[];
+  referenceImages?: { data: Uint8Array; mimeType: string; label?: string; tokoh?: string }[];
 };
 
 /** Lapisan abstraksi supaya provider gambar (Nano Banana, OpenAI) mudah diganti. */

@@ -13,7 +13,7 @@ function Avatar({ t, gaya, size }: { t: Pick<Tokoh, "id" | "nama" | "preset" | "
     return (
       <span className="relative shrink-0 overflow-hidden rounded-full bg-surface-muted" style={{ width: size, height: size }}>
         {/* potret di Supabase Storage; unoptimized agar tidak perlu daftar domain gambar */}
-        <Image src={t.potret} alt="" fill unoptimized className="object-cover object-top" />
+        <Image src={t.potret} alt="" fill unoptimized crossOrigin="anonymous" className="object-cover object-top" />
       </span>
     );
   }

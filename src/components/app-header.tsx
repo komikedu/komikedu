@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { BookOpen, Coins, Home, Plus } from "lucide-react";
+import { BookOpen, Coins, Home, Plus, Settings, Users } from "lucide-react";
 import { createDraft } from "@/app/comics/actions";
+import { isAdminEmail } from "@/lib/admin";
 import { createClient } from "@/lib/supabase/server";
 import { AccountMenu } from "./account-menu";
 
-export type HeaderUser = { email: string; nama: string; saldo: number };
+export type HeaderUser = { email: string; nama: string; saldo: number; admin?: boolean };
 
 /** Bar navigasi atas untuk halaman aplikasi (bukan editor yang layar penuh). */
 export function AppHeaderView({ user, aktif }: { user: HeaderUser; aktif?: "beranda" }) {
@@ -26,6 +27,10 @@ export function AppHeaderView({ user, aktif }: { user: HeaderUser; aktif?: "bera
             <Home size={15} aria-hidden />
             <span className="sr-only sm:not-sr-only">Beranda</span>
           </Link>
+          <Link href="/komunitas" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 hover:bg-surface-muted">
+            <Users size={15} aria-hidden />
+            <span className="sr-only sm:not-sr-only">Komunitas</span>
+          </Link>
           <form action={createDraft}>
             <button type="submit" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 hover:bg-surface-muted">
               <Plus size={15} /> Buat
@@ -33,6 +38,12 @@ export function AppHeaderView({ user, aktif }: { user: HeaderUser; aktif?: "bera
           </form>
         </nav>
         <div className="ml-auto flex items-center gap-2">
+          {user.admin && (
+            <Link href="/admin" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm hover:bg-surface-muted">
+              <Settings size={15} aria-hidden />
+              <span className="sr-only sm:not-sr-only">Admin</span>
+            </Link>
+          )}
           <span className="flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-sm" title="Saldo kredit">
             <Coins size={14} className="text-amber-600" />
             {user.saldo}
@@ -52,5 +63,5 @@ export async function AppHeader({ aktif }: { aktif?: "beranda" }) {
   } = await supabase.auth.getUser();
   if (!user) return null;
   const { data: profil } = await supabase.from("users").select("nama, saldo_kredit").eq("id", user.id).single();
-  return <AppHeaderView aktif={aktif} user={{ email: user.email ?? "", nama: profil?.nama ?? "", saldo: profil?.saldo_kredit ?? 0 }} />;
+  return <AppHeaderView aktif={aktif} user={{ email: user.email ?? "", nama: profil?.nama ?? "", saldo: profil?.saldo_kredit ?? 0, admin: isAdminEmail(user.email) }} />;
 }

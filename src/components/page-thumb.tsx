@@ -7,7 +7,9 @@ export function PageThumb({ halaman }: { halaman: HalamanThumb }) {
       {halaman.panels.map((p, i) => (
         <div key={i} className="absolute overflow-hidden bg-gray-100 outline outline-1 -outline-offset-1 outline-gray-900/70" style={gayaPanel(p)}>
           {p.imageUrl && (
-            <div className="absolute bg-cover bg-center" style={{ ...gayaGambar(p), backgroundImage: `url("${p.imageUrl}")`, backgroundSize: "100% 100%" }} />
+            // crossOrigin: samakan mode CORS dengan kanvas editor supaya cache browser tidak menyimpan versi tanpa header CORS
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.imageUrl} alt="" crossOrigin="anonymous" draggable={false} className="absolute max-w-none select-none object-fill" style={gayaGambar(p)} />
           )}
         </div>
       ))}

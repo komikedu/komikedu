@@ -16,11 +16,11 @@ export default async function EditorPage({ params }: { params: Promise<{ id: str
   } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=/comics/${id}/editor`);
 
-  const { data: comic } = await supabase.from("comics").select("id, user_id, judul, gaya, tokoh_json, karakter_json").eq("id", id).maybeSingle();
+  const { data: comic } = await supabase.from("comics").select("id, user_id, judul, gaya, tokoh_json, karakter_json, is_public, status, deskripsi_publik").eq("id", id).maybeSingle();
   if (!comic || comic.user_id !== user.id) notFound();
 
   const [{ data: profil }, { data: rows }] = await Promise.all([
-    supabase.from("users").select("saldo_kredit").eq("id", user.id).single(),
+    supabase.from("users").select("saldo_kredit, nama").eq("id", user.id).single(),
     supabase
       .from("pages")
       .select(
@@ -44,6 +44,8 @@ export default async function EditorPage({ params }: { params: Promise<{ id: str
         tokoh={(comic.tokoh_json as Tokoh[] | null) ?? []}
         gaya={comic.gaya}
         karakter={(comic.karakter_json as { nama: string; deskripsi: string }[] | null) ?? []}
+        penulis={profil?.nama || "Guru KomikEdu"}
+        terbit={{ terbit: comic.is_public && comic.status === "terbit", deskripsi: comic.deskripsi_publik ?? "" }}
       />
     </div>
   );

@@ -21,7 +21,11 @@ export function buildPagePrompt(req: PageImageRequest): string {
     `Tata letak: ${req.panels.length} panel pada posisi berikut, masing-masing berbingkai garis hitam dan dipisahkan celah putih.`,
     panels,
     chars ? `Karakter harus tampil konsisten (wajah, rambut, pakaian sama di semua panel):\n${chars}` : "",
-    req.referenceImages?.length ? "Ikuti desain karakter pada gambar referensi yang dilampirkan." : "",
+    req.referenceImages?.length
+      ? "Gambar referensi terlampir (urut): " +
+        req.referenceImages.map((r, i) => `${i + 1}) ${r.label ?? "desain karakter"}`).join("; ") +
+        ". Ikuti wajah, rambut, penutup kepala, pakaian, dan warna tokoh persis seperti referensi."
+      : "",
     "ATURAN KERAS: jangan gambar teks, huruf, angka, balon kata, tanda air, atau logo apa pun. " +
       "Papan nama toko, spanduk, poster, label, sampul buku, layar, dan papan tulis harus POLOS tanpa tulisan apa pun " +
       "(boleh berisi gambar sederhana atau warna saja). " +

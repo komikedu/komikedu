@@ -22,14 +22,14 @@ describe("nextStep", () => {
   });
 
   it("draft lengkap (topik atau PDF, plus gaya) mengarah ke langkah cerita untuk membuat naskah", () => {
-    expect(nextStep(comic({ topik: "KPK", gaya: "kartun-cerah" }))).toMatchObject({ href: "/comics/c1/wizard?langkah=4" });
-    expect(nextStep(comic({ adaMateri: true, gaya: "anime-lembut" }))).toMatchObject({ href: "/comics/c1/wizard?langkah=4" });
+    expect(nextStep(comic({ topik: "KPK", gaya: "kartun-cerah" }))).toMatchObject({ href: "/comics/c1/wizard?langkah=5" });
+    expect(nextStep(comic({ adaMateri: true, gaya: "anime-lembut" }))).toMatchObject({ href: "/comics/c1/wizard?langkah=5" });
   });
 
   it("status naskah menentukan badge dan tujuan", () => {
     expect(nextStep(comic({ naskah_status: "generating" }))).toMatchObject({ tone: "progress", href: "/comics/c1/naskah" });
     expect(nextStep(comic({ naskah_status: "review" }))).toMatchObject({ badge: "Tinjau naskah", tone: "attention" });
-    expect(nextStep(comic({ naskah_status: "error" }))).toMatchObject({ aksi: "Coba lagi", tone: "attention", href: "/comics/c1/wizard?langkah=4" });
+    expect(nextStep(comic({ naskah_status: "error" }))).toMatchObject({ aksi: "Coba lagi", tone: "attention", href: "/comics/c1/wizard?langkah=5" });
     expect(nextStep(comic({ naskah_status: "approved" }))).toMatchObject({ badge: "Di editor", href: "/comics/c1/editor" });
   });
 

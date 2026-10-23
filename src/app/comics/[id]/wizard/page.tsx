@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { WIZARD_STEPS } from "@/lib/comics/schema";
+import type { Tokoh } from "@/lib/comics/tokoh";
 import { createClient } from "@/lib/supabase/server";
 import { WizardForm } from "./wizard-form";
 
@@ -24,7 +25,7 @@ export default async function WizardPage({
 
   const { data: comic } = await supabase
     .from("comics")
-    .select("id, user_id, judul, topik, jenjang, tujuan, cerita, jumlah_halaman, gaya, wizard_step, status, naskah_status, naskah_error")
+    .select("id, user_id, judul, topik, jenjang, tujuan, cerita, tokoh_json, jumlah_halaman, gaya, wizard_step, status, naskah_status, naskah_error")
     .eq("id", id)
     .maybeSingle();
   if (!comic || comic.user_id !== user.id) notFound();
@@ -35,7 +36,7 @@ export default async function WizardPage({
     supabase.from("users").select("saldo_kredit").eq("id", user.id).single(),
   ]);
 
-  // ?langkah=4 membuka langsung langkah cerita (mis. dari dashboard atau setelah naskah gagal)
+  // ?langkah=5 membuka langsung langkah cerita (mis. dari dashboard atau setelah naskah gagal)
   const diminta = Number(langkah);
   const step = Number.isInteger(diminta) && diminta >= 1 && diminta <= WIZARD_STEPS ? diminta : comic.wizard_step;
 
@@ -51,6 +52,7 @@ export default async function WizardPage({
           jenjang: comic.jenjang,
           tujuan: comic.tujuan,
           cerita: comic.cerita,
+          tokoh_json: (comic.tokoh_json as Tokoh[] | null) ?? [],
           jumlah_halaman: comic.jumlah_halaman,
           gaya: comic.gaya,
           wizard_step: step,

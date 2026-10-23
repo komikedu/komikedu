@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import { LANGKAH_CERITA } from "@/lib/comics/schema";
 import type { Flag, Script } from "@/lib/ai/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { NaskahView, type NaskahStatus } from "./naskah-view";
@@ -22,7 +23,7 @@ export default async function NaskahPage({ params }: { params: Promise<{ id: str
     .maybeSingle();
   if (!comic || comic.user_id !== user.id) notFound();
   // naskah belum ada atau gagal: pembuatannya ada di langkah terakhir wizard (tempat guru menulis cerita)
-  if (comic.naskah_status === "none" || comic.naskah_status === "error") redirect(`/comics/${id}/wizard?langkah=4`);
+  if (comic.naskah_status === "none" || comic.naskah_status === "error") redirect(`/comics/${id}/wizard?langkah=${LANGKAH_CERITA}`);
 
   const [{ data: profil }, { count: halamanEditor }, { data: materi }] = await Promise.all([
     supabase.from("users").select("saldo_kredit").eq("id", user.id).single(),

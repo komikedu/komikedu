@@ -10,6 +10,8 @@ export const ComicInputSchema = z.object({
   tujuan: z.string().optional(),
   /** Alur cerita dari guru; AI mengikutinya bila ada. */
   cerita: z.string().max(2000).optional(),
+  /** Tokoh pilihan guru; naskah wajib memakai nama ini. */
+  tokoh: z.array(z.object({ nama: z.string(), peran: z.string(), deskripsi: z.string() })).max(4).optional(),
   jumlahHalaman: z.number().int().min(4).max(12),
 });
 export type ComicInput = z.infer<typeof ComicInputSchema>;

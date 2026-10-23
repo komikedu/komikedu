@@ -5,6 +5,7 @@ import { createScript } from "@/lib/ai/pipeline";
 import type { Flag } from "@/lib/ai/schemas";
 import { NASKAH_COST, NaskahEditSchema, uuid } from "@/lib/comics/naskah-edit";
 import { draftErrors } from "@/lib/comics/schema";
+import type { Tokoh } from "@/lib/comics/tokoh";
 import { scriptToPages } from "@/lib/editor/from-script";
 import { toRows } from "@/lib/editor/persist";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -30,7 +31,7 @@ async function ownComic(comicId: string, columns: string) {
  * sehingga job gagal tidak memakan kredit (sesuai PRD).
  */
 export async function generateNaskah(comicId: string): Promise<Result> {
-  const own = await ownComic(comicId, "judul, topik, jenjang, mapel, tujuan, cerita, jumlah_halaman, gaya, naskah_status");
+  const own = await ownComic(comicId, "judul, topik, jenjang, mapel, tujuan, cerita, tokoh_json, jumlah_halaman, gaya, naskah_status");
   if (!own) return { ok: false, error: "Komik tidak ditemukan" };
   const { supabase, user, comic } = own;
 
@@ -72,6 +73,7 @@ export async function generateNaskah(comicId: string): Promise<Result> {
       mapel: comic.mapel as string,
       tujuan: (comic.tujuan as string | null) ?? undefined,
       cerita: (comic.cerita as string | null) ?? undefined,
+      tokoh: ((comic.tokoh_json as Tokoh[] | null) ?? []).map((t) => ({ nama: t.nama, peran: t.peran, deskripsi: t.deskripsi })),
       jumlahHalaman: comic.jumlah_halaman as number,
     });
     const judul = comic.judul === "Komik tanpa judul" ? outline.judul.slice(0, 120) : (comic.judul as string);

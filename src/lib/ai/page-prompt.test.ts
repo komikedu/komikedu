@@ -26,8 +26,16 @@ describe("buildPagePrompt", () => {
     expect(p).not.toContain("gambar referensi");
   });
 
-  it("menyebut gambar referensi bila dilampirkan", () => {
-    expect(buildPagePrompt({ ...req, referenceImages: [{ data: new Uint8Array(1), mimeType: "image/webp" }] })).toContain("gambar referensi");
+  it("menyebut gambar referensi beserta labelnya, berurutan", () => {
+    const p = buildPagePrompt({
+      ...req,
+      referenceImages: [
+        { data: new Uint8Array(1), mimeType: "image/webp", label: "potret tokoh Sari" },
+        { data: new Uint8Array(1), mimeType: "image/webp", label: "halaman pertama komik ini" },
+      ],
+    });
+    expect(p).toContain("Gambar referensi terlampir (urut): 1) potret tokoh Sari; 2) halaman pertama komik ini");
+    expect(p).toMatch(/penutup kepala/);
   });
 
   it("menolak halaman tanpa panel", () => {

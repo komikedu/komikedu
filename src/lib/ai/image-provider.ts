@@ -9,8 +9,8 @@ export type PageImageRequest = {
   gaya: string;
   /** Deskripsi karakter yang muncul, agar wajah dan pakaian konsisten. */
   karakter: { nama: string; deskripsi: string }[];
-  /** 1-3 gambar referensi karakter (character sheet), sudah dalam bentuk byte. */
-  referenceImages?: { data: Uint8Array; mimeType: string }[];
+  /** 1-3 gambar referensi (potret tokoh atau halaman sebelumnya), sudah dalam bentuk byte, dengan label isinya. */
+  referenceImages?: { data: Uint8Array; mimeType: string; label?: string }[];
   premium?: boolean;
 };
 

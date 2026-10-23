@@ -4,10 +4,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, FileUp, Loader2, PenLine, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, FileUp, Loader2, PenLine, Plus, Sparkles, UserPlus, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { NASKAH_COST } from "@/lib/comics/naskah-edit";
 import { GAYA, MAX_CERITA, MAX_PDF_BYTES, WIZARD_STEPS, type Draft, type DraftPatch } from "@/lib/comics/schema";
+import { MAX_TOKOH, TOKOH_PRESET, fromPreset, gambarTokoh, type Tokoh } from "@/lib/comics/tokoh";
 import { processMaterial, removeMaterial, saveDraft } from "../../actions";
 import { generateNaskah } from "../naskah/actions";
 
@@ -22,15 +23,19 @@ const JUDUL: Record<number, { judul: string; sub: string }> = {
   1: { judul: "Pilih materi pelajaran", sub: "Dari topik singkat atau dokumen PDF yang kamu punya." },
   2: { judul: "Untuk kelas berapa?", sub: "Bahasa dan tingkat kesulitan disesuaikan dengan kelas." },
   3: { judul: "Pilih gaya visual", sub: "Gaya ini dipakai untuk semua gambar di komikmu." },
-  4: { judul: "Ceritakan alur komikmu", sub: "Siapa tokohnya dan apa yang terjadi? Boleh dikosongkan, AI akan membuat cerita sendiri." },
+  4: { judul: "Pilih tokoh cerita", sub: "Tokoh tampil sama di semua halaman. Boleh dilewati, AI akan membuat tokoh sendiri." },
+  5: { judul: "Ceritakan alur komikmu", sub: "Apa yang terjadi di cerita? Boleh dikosongkan, AI akan membuat cerita sendiri." },
 };
 
-function contohCerita(topik: string) {
+function contohCerita(topik: string, nama: string[]) {
   const t = topik || "materi ini";
+  // contoh memakai tokoh yang sudah dipilih, agar langsung bisa dipakai
+  const a = nama[0] ?? "Kiki";
+  const b = nama[1] ?? "Doni";
   return [
-    `Kiki dan Doni membantu ibu di toko kue. Mereka memakai ${t} untuk membagi kue dengan adil.`,
-    `Detektif cilik Rara memecahkan misteri di perpustakaan sekolah dengan petunjuk tentang ${t}.`,
-    `Doni gugup menghadapi lomba matematika antarkelas. Bu Guru dan teman-temannya membantunya memahami ${t}.`,
+    `${a} dan ${b} membantu ibu di toko kue. Mereka memakai ${t} untuk membagi kue dengan adil.`,
+    `${a} menjadi detektif cilik dan memecahkan misteri di perpustakaan sekolah dengan petunjuk tentang ${t}.`,
+    `${b} gugup menghadapi lomba matematika antarkelas. ${a} dan teman-temannya membantunya memahami ${t}.`,
   ];
 }
 
@@ -83,6 +88,7 @@ export function WizardForm({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(naskahStatus === "error" ? naskahError : null);
   const [tujuanOpen, setTujuanOpen] = useState(!!initial.tujuan);
+  const [formTokoh, setFormTokoh] = useState<{ open: boolean; nama: string; deskripsi: string }>({ open: false, nama: "", deskripsi: "" });
   const dirty = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -164,6 +170,18 @@ export function WizardForm({
       setError(res.error);
     }
   }
+
+  const tokoh = draft.tokoh_json;
+  const dipilih = (id: string) => tokoh.some((t) => t.id === id);
+  const toggleTokoh = (t: Tokoh) =>
+    update({ tokoh_json: dipilih(t.id) ? tokoh.filter((x) => x.id !== t.id) : tokoh.length < MAX_TOKOH ? [...tokoh, t] : tokoh });
+  const tambahTokohSendiri = () => {
+    const nama = formTokoh.nama.trim();
+    const deskripsi = formTokoh.deskripsi.trim();
+    if (!nama || !deskripsi || tokoh.length >= MAX_TOKOH) return;
+    update({ tokoh_json: [...tokoh, { id: `sendiri-${crypto.randomUUID().slice(0, 8)}`, nama, peran: "", deskripsi, preset: false }] });
+    setFormTokoh({ open: false, nama: "", deskripsi: "" });
+  };
 
   const step = draft.wizard_step;
   const goto = (n: number) => update({ wizard_step: Math.min(WIZARD_STEPS, Math.max(1, n)) });
@@ -344,6 +362,96 @@ export function WizardForm({
 
                 {step === 4 && (
                   <div className="flex flex-col gap-3">
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                      {TOKOH_PRESET.map((t) => (
+                        <Pilihan key={t.id} aktif={dipilih(t.id)} onClick={() => toggleTokoh(fromPreset(t))} className="overflow-hidden text-left">
+                          <span className="relative block aspect-square w-full bg-amber-50">
+                            <Image src={gambarTokoh(t.id, draft.gaya)} alt="" fill sizes="(min-width: 640px) 130px, 30vw" className="object-cover" />
+                          </span>
+                          <span className="block px-2 py-1.5">
+                            <span className="block truncate text-xs font-semibold sm:text-sm">{t.nama}</span>
+                            <span className="block text-[11px] text-gray-500">{t.peran}</span>
+                          </span>
+                        </Pilihan>
+                      ))}
+                      {tokoh
+                        .filter((t) => !t.preset)
+                        .map((t) => (
+                          <div key={t.id} className="relative flex flex-col overflow-hidden rounded-xl border-2 border-brand bg-brand/5">
+                            <span className="grid aspect-square w-full place-items-center bg-teal-100 text-3xl font-bold text-brand">{t.nama.charAt(0).toUpperCase()}</span>
+                            <span className="block px-2 py-1.5">
+                              <span className="block truncate text-xs font-semibold sm:text-sm">{t.nama}</span>
+                              <span className="block text-[11px] text-gray-500">Buatan sendiri</span>
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Hapus tokoh ${t.nama}`}
+                              onClick={() => toggleTokoh(t)}
+                              className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-white/90 text-gray-600 shadow hover:text-danger"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                    <p role="status" className="text-xs text-gray-500">
+                      {tokoh.length} dari {MAX_TOKOH} tokoh dipilih{tokoh.length ? `: ${tokoh.map((t) => t.nama).join(", ")}` : ""}
+                    </p>
+
+                    {formTokoh.open ? (
+                      <div className="flex flex-col gap-2 rounded-xl border border-line p-3">
+                        <label htmlFor="nama-tokoh" className="text-sm font-medium">
+                          Nama tokoh
+                        </label>
+                        <input
+                          id="nama-tokoh"
+                          maxLength={40}
+                          value={formTokoh.nama}
+                          onChange={(e) => setFormTokoh((f) => ({ ...f, nama: e.target.value }))}
+                          placeholder="Contoh: Raka"
+                          className="rounded-lg border border-line px-3 py-2 text-sm"
+                        />
+                        <label htmlFor="deskripsi-tokoh" className="text-sm font-medium">
+                          Ciri-ciri
+                        </label>
+                        <textarea
+                          id="deskripsi-tokoh"
+                          rows={2}
+                          maxLength={300}
+                          value={formTokoh.deskripsi}
+                          onChange={(e) => setFormTokoh((f) => ({ ...f, deskripsi: e.target.value }))}
+                          placeholder="Contoh: anak laki-laki kelas 4, rambut keriting, kulit cokelat, seragam putih-merah, suka bermain bola"
+                          className="rounded-lg border border-line px-3 py-2 text-sm"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button type="button" onClick={() => setFormTokoh({ open: false, nama: "", deskripsi: "" })} className="rounded-lg px-3 py-1.5 text-sm hover:bg-surface-muted">
+                            Batal
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!formTokoh.nama.trim() || !formTokoh.deskripsi.trim() || tokoh.length >= MAX_TOKOH}
+                            onClick={tambahTokohSendiri}
+                            className="flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-brand-foreground disabled:opacity-50"
+                          >
+                            <Plus size={14} /> Tambah tokoh
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={tokoh.length >= MAX_TOKOH}
+                        onClick={() => setFormTokoh((f) => ({ ...f, open: true }))}
+                        className="flex w-fit items-center gap-1.5 text-sm text-brand underline disabled:opacity-50"
+                      >
+                        <UserPlus size={15} /> Buat tokoh sendiri
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {step === 5 && (
+                  <div className="flex flex-col gap-3">
                     <label htmlFor="cerita" className="sr-only">
                       Alur cerita
                     </label>
@@ -361,7 +469,7 @@ export function WizardForm({
                     </p>
                     <p className="text-sm text-gray-600">Butuh inspirasi? Klik salah satu contoh:</p>
                     <div className="flex flex-col gap-2">
-                      {contohCerita(draft.topik?.trim() ?? "").map((c) => (
+                      {contohCerita(draft.topik?.trim() ?? "", tokoh.map((t) => t.nama)).map((c) => (
                         <button
                           key={c}
                           type="button"

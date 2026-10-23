@@ -23,6 +23,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "Sesi berakhir, silakan login lagi" }, { status: 401 });
 
-  const res = await generatePageImage(supabase, createAdminClient(), user.id, id, pageId);
+  const res = await generatePageImage(supabase, createAdminClient(), user.id, id, pageId, request.nextUrl.origin);
   return res.ok ? NextResponse.json(res) : NextResponse.json({ ok: false, error: res.error }, { status: res.status });
 }

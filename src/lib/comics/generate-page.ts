@@ -5,6 +5,7 @@ import { generateCharacterSheet, namaTokoh, type KarakterSheet } from "@/lib/ai/
 import { cropPanels } from "@/lib/ai/crop";
 import { GeminiImageProvider } from "@/lib/ai/gemini-image";
 import { GAYA } from "@/lib/comics/schema";
+import { gambarTokoh, isPresetId, type Tokoh } from "@/lib/comics/tokoh";
 import { PAGE_H, PAGE_W } from "@/lib/editor/types";
 
 export const GAMBAR_COST = 1;
@@ -34,10 +35,12 @@ export async function generatePageImage(
   userId: string,
   comicId: string,
   pageId: string,
+  /** origin situs (mis. https://komikedu.id) untuk mengambil potret tokoh preset dari /public */
+  assetOrigin?: string,
 ): Promise<GenerateResult> {
   const { data: comic } = await supabase
     .from("comics")
-    .select("id, user_id, jenjang, gaya, cerita, karakter_json, ref_halaman_url")
+    .select("id, user_id, jenjang, gaya, cerita, tokoh_json, karakter_json, ref_halaman_url")
     .eq("id", comicId)
     .maybeSingle();
   if (!comic || comic.user_id !== userId) return { ok: false, error: "Komik tidak ditemukan", status: 404 };
@@ -80,21 +83,37 @@ export async function generatePageImage(
   try {
     const gaya = GAYA.find((g) => g.id === comic.gaya) ?? GAYA[0];
 
-    // lembar karakter: dibuat sekali per komik dari seluruh naskah, lalu dipakai di setiap halaman
+    // lembar karakter: tokoh pilihan guru dipakai apa adanya; tokoh lain di naskah dibuatkan deskripsi
+    // sekali per komik lalu disimpan, agar setiap halaman memakai deskripsi yang sama
+    const tokoh = ((comic.tokoh_json as Tokoh[] | null) ?? []).filter((t) => t.nama && t.deskripsi);
     let karakter = (comic.karakter_json as KarakterSheet | null) ?? null;
     if (!karakter) {
       const { data: semua } = await supabase.from("pages").select("panels(script_json)").eq("comic_id", comicId);
       const scripts = (semua ?? []).flatMap((pg) => ((pg.panels ?? []) as { script_json: PanelRow["script_json"] }[]).map((p) => p.script_json ?? {}));
-      karakter = await generateCharacterSheet(namaTokoh(scripts), { jenjang: comic.jenjang, gaya: gaya.prompt, cerita: comic.cerita });
+      const dipilih = new Set(tokoh.map((t) => t.nama.toLowerCase()));
+      const lainnya = namaTokoh(scripts).filter((n) => !dipilih.has(n.toLowerCase()));
+      const tambahan = lainnya.length ? await generateCharacterSheet(lainnya, { jenjang: comic.jenjang, gaya: gaya.prompt, cerita: comic.cerita }) : [];
+      karakter = [...tokoh.map((t) => ({ nama: t.nama, deskripsi: t.deskripsi })), ...tambahan];
       await admin.from("comics").update({ karakter_json: karakter }).eq("id", comicId);
     }
 
-    // halaman pertama yang berhasil menjadi referensi visual untuk halaman berikutnya
-    const referenceImages: { data: Uint8Array; mimeType: string }[] = [];
-    if (comic.ref_halaman_url) {
-      const r = await fetch(comic.ref_halaman_url);
-      if (r.ok) referenceImages.push({ data: new Uint8Array(await r.arrayBuffer()), mimeType: r.headers.get("content-type") ?? "image/webp" });
-    }
+    // gambar referensi (maks. 3): potret tokoh preset yang muncul di halaman ini, lalu halaman pertama komik
+    const ambil = async (url: string, label: string) => {
+      const r = await fetch(url);
+      return r.ok ? { data: new Uint8Array(await r.arrayBuffer()), mimeType: r.headers.get("content-type") ?? "image/webp", label } : null;
+    };
+    const teksHalaman = panels
+      .map((p, i) => [adegan[i], ...(p.script_json?.karakter ?? []), ...(p.script_json?.dialog ?? []).map((d) => d.karakter)].join(" "))
+      .join(" ")
+      .toLowerCase();
+    const tampil = tokoh.filter((t) => t.preset && isPresetId(t.id) && teksHalaman.includes(t.nama.toLowerCase()));
+    const slotTokoh = comic.ref_halaman_url ? 2 : 3;
+    const referenceImages = (
+      await Promise.all([
+        ...(assetOrigin ? tampil.slice(0, slotTokoh).map((t) => ambil(`${assetOrigin}${gambarTokoh(t.id, comic.gaya)}`, `potret tokoh ${t.nama}`)) : []),
+        ...(comic.ref_halaman_url ? [ambil(comic.ref_halaman_url, "halaman pertama komik ini (ikuti desain tokoh dan gaya gambarnya)")] : []),
+      ])
+    ).filter((r): r is NonNullable<typeof r> => r !== null);
 
     const rects = panels.map((p) => {
       const pos = p.posisi ?? { x: 0, y: 0, w: PAGE_W, h: PAGE_H };

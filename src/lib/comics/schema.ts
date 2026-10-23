@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_TOKOH, TokohSchema } from "./tokoh";
 
 export const GAYA = [
   {
@@ -25,7 +26,9 @@ export const GAYA = [
 ] as const;
 
 export const MAX_CERITA = 2000;
-export const WIZARD_STEPS = 4;
+export const WIZARD_STEPS = 5;
+/** Langkah tempat guru menulis cerita dan membuat naskah (langkah terakhir). */
+export const LANGKAH_CERITA = 5;
 
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;
 export const MAX_PDF_PAGES = 30;
@@ -40,6 +43,8 @@ export const DraftSchema = z.object({
   gaya: z.enum(["kartun-cerah", "anime-lembut", "buku-cerita"]).nullable(),
   /** Alur cerita yang ditulis guru (opsional). Kosong = AI yang menentukan cerita. */
   cerita: z.string().trim().max(MAX_CERITA).nullable(),
+  /** Tokoh pilihan guru (preset atau buatan sendiri). Kosong = AI yang menentukan tokoh. */
+  tokoh_json: z.array(TokohSchema).max(MAX_TOKOH),
   wizard_step: z.number().int().min(1).max(WIZARD_STEPS),
 });
 export type Draft = z.infer<typeof DraftSchema>;

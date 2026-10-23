@@ -1,3 +1,5 @@
+import { LANGKAH_CERITA } from "./schema";
+
 export type ComicSummary = {
   id: string;
   judul: string;
@@ -31,12 +33,12 @@ export function nextStep(c: ComicSummary): NextStep {
     case "generating":
       return { badge: "Naskah dibuat...", tone: "progress", aksi: "Lihat naskah", href: `${base}/naskah` };
     case "error":
-      return { badge: "Naskah gagal", tone: "attention", aksi: "Coba lagi", href: `${base}/wizard?langkah=4` };
+      return { badge: "Naskah gagal", tone: "attention", aksi: "Coba lagi", href: `${base}/wizard?langkah=${LANGKAH_CERITA}` };
     default: {
       // naskah dibuat di langkah terakhir wizard, setelah guru menulis cerita
       const siap = (!!c.topik?.trim() || c.adaMateri) && !!c.gaya;
       return siap
-        ? { badge: "Draft", tone: "neutral", aksi: "Tulis cerita dan buat naskah", href: `${base}/wizard?langkah=4` }
+        ? { badge: "Draft", tone: "neutral", aksi: "Tulis cerita dan buat naskah", href: `${base}/wizard?langkah=${LANGKAH_CERITA}` }
         : { badge: "Draft", tone: "neutral", aksi: "Lanjutkan pengaturan", href: `${base}/wizard` };
     }
   }

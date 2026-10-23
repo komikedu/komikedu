@@ -347,11 +347,11 @@ export function WizardForm({
                 {step === 3 && (
                   <fieldset>
                     <legend className="sr-only">Gaya visual</legend>
-                    <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                    <div className="grid grid-cols-2 gap-2 sm:gap-3">
                       {GAYA.map((g) => (
                         <Pilihan key={g.id} aktif={draft.gaya === g.id} onClick={() => update({ gaya: g.id })} className="overflow-hidden text-left">
                           <span className="relative block aspect-[4/3] w-full">
-                            <Image src={g.gambar} alt="" fill sizes="(min-width: 640px) 180px, 33vw" className="object-cover" />
+                            <Image src={g.gambar} alt="" fill sizes="(min-width: 640px) 260px, 50vw" className="object-cover" />
                           </span>
                           <span className="block px-2 py-2 sm:px-3">
                             <span className="block text-xs font-semibold sm:text-sm">{g.nama}</span>

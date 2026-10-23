@@ -23,6 +23,16 @@ export const GAYA = [
     gambar: "/gaya/buku-cerita.webp",
     prompt: "ilustrasi buku cerita anak dengan cat air, tekstur kertas, warna hangat",
   },
+  {
+    id: "kartun-sitkom",
+    nama: "Kartun sitkom",
+    deskripsi: "Garis tebal, warna datar, ekspresif",
+    gambar: "/gaya/kartun-sitkom.webp",
+    // kata kunci Inggris dipertahankan: model gambar lebih andal membaca istilah gaya dalam bahasa Inggris
+    prompt:
+      "kartun vektor datar 2D bergaya serial animasi sitkom (flat vector cartoon, sitcom animation style), garis tepi hitam tebal dan seragam, " +
+      "warna datar tanpa gradasi, bayangan hanya satu nada tipis, ekspresi karikatur yang dilebih-lebihkan, mata bulat dengan pupil kecil, tampilan vektor bersih",
+  },
 ] as const;
 
 export const MAX_CERITA = 2000;
@@ -40,7 +50,7 @@ export const DraftSchema = z.object({
   jenjang: z.number().int().min(1).max(6),
   tujuan: z.string().trim().max(500).nullable(),
   jumlah_halaman: z.number().int().min(4).max(12),
-  gaya: z.enum(["kartun-cerah", "anime-lembut", "buku-cerita"]).nullable(),
+  gaya: z.enum(["kartun-cerah", "anime-lembut", "buku-cerita", "kartun-sitkom"]).nullable(),
   /** Alur cerita yang ditulis guru (opsional). Kosong = AI yang menentukan cerita. */
   cerita: z.string().trim().max(MAX_CERITA).nullable(),
   /** Tokoh pilihan guru (preset atau buatan sendiri). Kosong = AI yang menentukan tokoh. */

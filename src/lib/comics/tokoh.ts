@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export type GayaId = "kartun-cerah" | "anime-lembut" | "buku-cerita";
+export type GayaId = "kartun-cerah" | "anime-lembut" | "buku-cerita" | "kartun-sitkom";
 
 export type TokohPreset = {
   id: string;

@@ -63,7 +63,36 @@ export const LAYOUTS: LayoutTemplate[] = [
       { x: 0, y: 0.6 + G / 2, w: 1, h: 0.4 - G / 2 },
     ],
   },
+  {
+    id: "2-kiri-kanan",
+    nama: "Dua panel tinggi berdampingan kiri-kanan",
+    panels: [
+      { x: 0, y: 0, w: 0.5 - G / 2, h: 1 },
+      { x: 0.5 + G / 2, y: 0, w: 0.5 - G / 2, h: 1 },
+    ],
+  },
+  {
+    id: "3-dua-atas-satu-bawah",
+    nama: "Dua panel di atas, satu panel lebar di bawah",
+    panels: [
+      { x: 0, y: 0, w: 0.5 - G / 2, h: 0.5 - G / 2 },
+      { x: 0.5 + G / 2, y: 0, w: 0.5 - G / 2, h: 0.5 - G / 2 },
+      { x: 0, y: 0.5 + G / 2, w: 1, h: 0.5 - G / 2 },
+    ],
+  },
+  {
+    id: "4-dua-baris-dua-bawah",
+    nama: "Dua panel lebar bersusun, lalu dua panel kecil di bawah",
+    panels: [
+      { x: 0, y: 0, w: 1, h: 1 / 3 - G / 2 },
+      { x: 0, y: 1 / 3 + G / 2, w: 1, h: 1 / 3 - G },
+      { x: 0, y: 2 / 3 + G / 2, w: 0.5 - G / 2, h: 1 / 3 - G / 2 },
+      { x: 0.5 + G / 2, y: 2 / 3 + G / 2, w: 0.5 - G / 2, h: 1 / 3 - G / 2 },
+    ],
+  },
 ];
+
+export const isLayoutId = (id: unknown): id is string => typeof id === "string" && LAYOUTS.some((l) => l.id === id);
 
 export function getLayout(id: string): LayoutTemplate {
   const layout = LAYOUTS.find((l) => l.id === id);

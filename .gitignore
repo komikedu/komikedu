@@ -46,3 +46,4 @@ next-env.d.ts
 
 # screenshot referensi pihak ketiga, jangan di-push
 /ref/
+/.next-build/

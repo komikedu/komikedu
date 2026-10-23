@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { temporal } from "zundo";
 import { createBubble, createPage } from "./factory";
-import type { Bubble, BubbleKind, EditorPage } from "./types";
+import { deletePanel, duplicateBubble, duplicatePanel, movePanel, resizePanel, splitPanel, type SplitArah } from "./panel-ops";
+import type { Bubble, BubbleKind, EditorPage, Panel } from "./types";
 
 type Tool = "move" | "text";
 
@@ -12,6 +13,8 @@ type EditorState = {
   selectedId: string | null;
   tool: Tool;
   zoom: number;
+  /** Pergeseran sementara saat panel diseret (agar balonnya ikut terlihat bergerak); tidak masuk riwayat. */
+  drag: { panelId: string; dx: number; dy: number } | null;
 
   init: (pages: EditorPage[]) => void;
   setActivePage: (id: string) => void;
@@ -22,6 +25,14 @@ type EditorState = {
   addBubble: (panelId: string, kind: BubbleKind, cx: number, cy: number) => void;
   updateBubble: (id: string, patch: Partial<Omit<Bubble, "id" | "panelId">>) => void;
   deleteBubble: (id: string) => void;
+  duplicateBubble: (id: string) => void;
+  setDrag: (drag: EditorState["drag"]) => void;
+  movePanel: (id: string, dx: number, dy: number) => void;
+  resizePanel: (id: string, rect: { x: number; y: number; w: number; h: number }) => void;
+  splitPanel: (id: string, arah: SplitArah) => void;
+  duplicatePanel: (id: string) => void;
+  deletePanel: (id: string) => void;
+  updatePanel: (id: string, patch: Partial<Pick<Panel, "visible">>) => void;
 };
 
 export const useEditor = create<EditorState>()(
@@ -32,6 +43,7 @@ export const useEditor = create<EditorState>()(
       selectedId: null,
       tool: "move",
       zoom: 1,
+      drag: null,
 
       init: (pages) =>
         set((s) => {
@@ -88,6 +100,58 @@ export const useEditor = create<EditorState>()(
           for (const page of s.pages) page.bubbles = page.bubbles.filter((b) => b.id !== id);
           if (s.selectedId === id) s.selectedId = null;
         }),
+
+      duplicateBubble: (id) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          const baru = page && duplicateBubble(page, id);
+          if (baru) s.selectedId = baru;
+        }),
+
+      setDrag: (drag) =>
+        set((s) => {
+          s.drag = drag;
+        }),
+
+      movePanel: (id, dx, dy) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (page) movePanel(page, id, dx, dy);
+          s.drag = null;
+        }),
+
+      resizePanel: (id, rect) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (page) resizePanel(page, id, rect);
+        }),
+
+      splitPanel: (id, arah) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (page) splitPanel(page, id, arah);
+        }),
+
+      duplicatePanel: (id) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          const baru = page && duplicatePanel(page, id);
+          if (baru) s.selectedId = baru;
+        }),
+
+      deletePanel: (id) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (page && deletePanel(page, id) && s.selectedId === id) s.selectedId = null;
+        }),
+
+      updatePanel: (id, patch) =>
+        set((s) => {
+          for (const page of s.pages) {
+            const p = page.panels.find((x) => x.id === id);
+            if (p) Object.assign(p, patch);
+          }
+        }),
     })),
     {
       limit: 100,
@@ -107,4 +171,10 @@ export const clearHistory = () => useEditor.temporal.getState().clear();
 export function selectSelectedBubble(s: Pick<EditorState, "pages" | "activePageId" | "selectedId">) {
   const page = s.pages.find((p) => p.id === s.activePageId);
   return page?.bubbles.find((b) => b.id === s.selectedId) ?? null;
+}
+
+/** Panel yang sedang dipilih (null bila tidak ada). */
+export function selectSelectedPanel(s: Pick<EditorState, "pages" | "activePageId" | "selectedId">) {
+  const page = s.pages.find((p) => p.id === s.activePageId);
+  return page?.panels.find((p) => p.id === s.selectedId) ?? null;
 }

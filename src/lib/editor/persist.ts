@@ -41,7 +41,7 @@ export const EditorPayloadSchema = z
     z.object({
       id: z.string().uuid(),
       layoutId: z.enum(layoutIds),
-      panels: z.array(PanelSchema).min(1).max(6),
+      panels: z.array(PanelSchema).min(1).max(12),
       bubbles: z.array(BubbleSchema).max(MAX_BUBBLES_PER_PAGE),
     }),
   )

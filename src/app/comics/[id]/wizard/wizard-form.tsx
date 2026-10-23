@@ -1,34 +1,98 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, Check, FileUp, Loader2, PenLine, Sparkles, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { NASKAH_COST } from "@/lib/comics/naskah-edit";
+import { GAYA, MAX_CERITA, MAX_PDF_BYTES, WIZARD_STEPS, type Draft, type DraftPatch } from "@/lib/comics/schema";
 import { processMaterial, removeMaterial, saveDraft } from "../../actions";
-import { GAYA, MAX_PDF_BYTES, draftErrors, type Draft } from "@/lib/comics/schema";
+import { generateNaskah } from "../naskah/actions";
 
 type Materi = { nama: string; karakter: number } | null;
 type SaveState = "idle" | "saving" | "saved" | "error";
+type NaskahStatus = "none" | "generating" | "review" | "approved" | "error";
 
-const LANGKAH = ["Materi", "Pengaturan", "Gaya dan ringkasan"];
+const TOPIK_POPULER = ["KPK dan FPB", "Pecahan senilai", "Bangun datar", "Membaca jam", "Perkalian"];
+const HALAMAN = [4, 6, 8, 10, 12];
+
+const JUDUL: Record<number, { judul: string; sub: string }> = {
+  1: { judul: "Pilih materi pelajaran", sub: "Dari topik singkat atau dokumen PDF yang kamu punya." },
+  2: { judul: "Untuk kelas berapa?", sub: "Bahasa dan tingkat kesulitan disesuaikan dengan kelas." },
+  3: { judul: "Pilih gaya visual", sub: "Gaya ini dipakai untuk semua gambar di komikmu." },
+  4: { judul: "Ceritakan alur komikmu", sub: "Siapa tokohnya dan apa yang terjadi? Boleh dikosongkan, AI akan membuat cerita sendiri." },
+};
+
+function contohCerita(topik: string) {
+  const t = topik || "materi ini";
+  return [
+    `Kiki dan Doni membantu ibu di toko kue. Mereka memakai ${t} untuk membagi kue dengan adil.`,
+    `Detektif cilik Rara memecahkan misteri di perpustakaan sekolah dengan petunjuk tentang ${t}.`,
+    `Doni gugup menghadapi lomba matematika antarkelas. Bu Guru dan teman-temannya membantunya memahami ${t}.`,
+  ];
+}
+
+/** Kartu pilihan besar, seperti onboarding referensi. */
+function Pilihan({ aktif, onClick, children, className = "" }: { aktif: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={aktif}
+      onClick={onClick}
+      className={`relative rounded-xl border-2 transition ${aktif ? "border-brand bg-brand/5" : "border-line bg-surface hover:border-gray-300"} ${className}`}
+    >
+      {aktif && (
+        <span className="absolute right-2 top-2 z-10 grid h-5 w-5 place-items-center rounded-full bg-brand text-brand-foreground">
+          <Check size={12} strokeWidth={3} />
+        </span>
+      )}
+      {children}
+    </button>
+  );
+}
 
 export function WizardForm({
   comicId,
   userId,
   initial,
   materiAwal,
+  naskahStatus,
+  naskahError,
+  saldo,
+  simpan = saveDraft,
 }: {
   comicId: string;
   userId: string;
   initial: Draft;
   materiAwal: Materi;
+  naskahStatus: NaskahStatus;
+  naskahError: string | null;
+  saldo: number;
+  /** Fungsi simpan draft; bisa diganti untuk halaman pratinjau tanpa login. */
+  simpan?: (id: string, patch: DraftPatch) => Promise<{ ok: boolean }>;
 }) {
+  const router = useRouter();
   const [draft, setDraft] = useState<Draft>(initial);
   const [materi, setMateri] = useState<Materi>(materiAwal);
+  const [mode, setMode] = useState<"topik" | "pdf">(materiAwal ? "pdf" : "topik");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [uploadMsg, setUploadMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [showErrors, setShowErrors] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(naskahStatus === "error" ? naskahError : null);
+  const [tujuanOpen, setTujuanOpen] = useState(!!initial.tujuan);
   const dirty = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const payload = (d: Draft): DraftPatch => ({
+    ...d,
+    topik: d.topik?.trim() ? d.topik : null,
+    tujuan: d.tujuan?.trim() ? d.tujuan : null,
+    cerita: d.cerita?.trim() ? d.cerita : null,
+    judul: d.judul.trim() || "Komik tanpa judul",
+  });
 
   const update = useCallback((patch: Partial<Draft>) => {
     dirty.current = true;
@@ -36,26 +100,21 @@ export function WizardForm({
     setDraft((d) => ({ ...d, ...patch }));
   }, []);
 
-  // autosave 800 ms setelah perubahan terakhir
+  // autosave 700 ms setelah perubahan terakhir
   useEffect(() => {
     if (!dirty.current) return;
-    const t = setTimeout(async () => {
+    timer.current = setTimeout(async () => {
       setSaveState("saving");
-      const res = await saveDraft(comicId, {
-        ...draft,
-        topik: draft.topik?.trim() ? draft.topik : null,
-        tujuan: draft.tujuan?.trim() ? draft.tujuan : null,
-        judul: draft.judul.trim() || "Komik tanpa judul",
-      });
+      const res = await simpan(comicId, payload(draft));
       dirty.current = false;
       setSaveState(res.ok ? "saved" : "error");
-    }, 800);
-    return () => clearTimeout(t);
-  }, [draft, comicId]);
+    }, 700);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [draft, comicId, simpan]);
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
+  async function onFile(file: File | undefined) {
     if (!file) return;
     setUploadMsg(null);
     if (file.type !== "application/pdf") return setUploadMsg({ ok: false, text: "Berkas harus berformat PDF." });
@@ -63,8 +122,8 @@ export function WizardForm({
 
     setUploading(true);
     const path = `${userId}/${comicId}/${crypto.randomUUID()}.pdf`;
-    const { error } = await createClient().storage.from("materials").upload(path, file, { contentType: "application/pdf" });
-    if (error) {
+    const { error: upErr } = await createClient().storage.from("materials").upload(path, file, { contentType: "application/pdf" });
+    if (upErr) {
       setUploading(false);
       return setUploadMsg({ ok: false, text: "Gagal mengunggah berkas. Coba lagi." });
     }
@@ -86,142 +145,310 @@ export function WizardForm({
     }
   }
 
-  const errors = draftErrors(draft, !!materi);
+  async function buatNaskah() {
+    setError(null);
+    setGenerating(true);
+    // pastikan cerita dan pengaturan terakhir sudah tersimpan sebelum server membacanya
+    if (timer.current) clearTimeout(timer.current);
+    const saved = await simpan(comicId, payload(draft));
+    dirty.current = false;
+    if (!saved.ok) {
+      setGenerating(false);
+      return setError("Gagal menyimpan pengaturan. Coba lagi.");
+    }
+    const res = await generateNaskah(comicId);
+    if (res.ok) {
+      router.push(`/comics/${comicId}/naskah`);
+    } else {
+      setGenerating(false);
+      setError(res.error);
+    }
+  }
+
   const step = draft.wizard_step;
-  const goto = (n: number) => update({ wizard_step: n });
+  const goto = (n: number) => update({ wizard_step: Math.min(WIZARD_STEPS, Math.max(1, n)) });
+  const adaMateri = !!materi;
+  const bolehLanjut = step === 1 ? !!draft.topik?.trim() || adaMateri : step === 3 ? !!draft.gaya : true;
+  const sudahAdaNaskah = naskahStatus === "review" || naskahStatus === "approved" || naskahStatus === "generating";
+  const kurangKredit = saldo < NASKAH_COST;
+  const { judul, sub } = JUDUL[step];
 
   return (
-    <main className="mx-auto max-w-2xl p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Komik baru</h1>
-        <span role="status" className="text-xs text-gray-500">
-          {saveState === "saving" && "Menyimpan..."}
-          {saveState === "saved" && "Draft tersimpan"}
-          {saveState === "error" && "Gagal menyimpan"}
-        </span>
-      </div>
+    <main className="mx-auto max-w-xl px-4 py-8 sm:py-12">
+      <div className="rounded-2xl bg-surface shadow-xl ring-1 ring-line">
+        <div className="px-5 pb-6 pt-6 sm:px-8">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>
+              Langkah {step} dari {WIZARD_STEPS}
+            </span>
+            <span role="status">
+              {saveState === "saving" && "Menyimpan..."}
+              {saveState === "saved" && "Draft tersimpan"}
+              {saveState === "error" && <span className="text-danger">Gagal menyimpan</span>}
+            </span>
+          </div>
+          <h1 className="mt-3 text-center text-2xl font-bold">{judul}</h1>
+          <p className="mt-1 text-center text-gray-600">{sub}</p>
 
-      <ol className="mt-4 flex gap-2 text-sm" aria-label="Langkah">
-        {LANGKAH.map((nama, i) => (
-          <li
-            key={nama}
-            aria-current={step === i + 1 ? "step" : undefined}
-            className={`flex-1 rounded border px-3 py-2 ${step === i + 1 ? "border-black font-semibold" : "border-gray-300 text-gray-500"}`}
-          >
-            {i + 1}. {nama}
-          </li>
-        ))}
-      </ol>
+          <div className="mt-6">
+            {generating ? (
+              <div role="status" className="flex flex-col items-center gap-3 py-10 text-center">
+                <Loader2 size={32} className="animate-spin text-brand" />
+                <p className="font-medium">Menyusun naskahmu...</p>
+                <p className="text-sm text-gray-500">Biasanya 30 sampai 60 detik. Kredit dikembalikan bila gagal.</p>
+              </div>
+            ) : (
+              <>
+                {step === 1 && (
+                  <div className="flex flex-col gap-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Pilihan aktif={mode === "topik"} onClick={() => setMode("topik")} className="p-4 text-left">
+                        <PenLine size={20} className="text-brand" />
+                        <span className="mt-2 block font-semibold">Tulis topik</span>
+                        <span className="block text-xs text-gray-500">Cepat, cukup satu kalimat</span>
+                      </Pilihan>
+                      <Pilihan aktif={mode === "pdf"} onClick={() => setMode("pdf")} className="p-4 text-left">
+                        <FileUp size={20} className="text-brand" />
+                        <span className="mt-2 block font-semibold">Unggah PDF</span>
+                        <span className="block text-xs text-gray-500">Fakta diambil dari materimu</span>
+                      </Pilihan>
+                    </div>
 
-      <section className="mt-6 flex flex-col gap-5">
-        {step === 1 && (
-          <>
-            <div className="flex flex-col gap-1">
-              <label htmlFor="judul" className="text-sm font-medium">Judul komik</label>
-              <input id="judul" value={draft.judul} maxLength={120} onChange={(e) => update({ judul: e.target.value })}
-                className="rounded border border-gray-300 px-3 py-2" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label htmlFor="topik" className="text-sm font-medium">Topik pelajaran</label>
-              <textarea id="topik" rows={3} maxLength={500} value={draft.topik ?? ""} onChange={(e) => update({ topik: e.target.value })}
-                placeholder="Contoh: KPK dan FPB" className="rounded border border-gray-300 px-3 py-2" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium">Atau unggah materi PDF (opsional)</span>
-              <p className="text-xs text-gray-500">Maksimal 20 MB dan 30 halaman. Harus PDF berisi teks, bukan hasil scan.</p>
-              {materi ? (
-                <div className="flex items-center justify-between rounded border border-gray-300 px-3 py-2 text-sm">
-                  <span>{materi.nama} ({materi.karakter.toLocaleString("id-ID")} karakter)</span>
-                  <button type="button" onClick={onRemove} className="text-red-700 underline">Hapus</button>
-                </div>
-              ) : (
-                <input type="file" accept="application/pdf" disabled={uploading} onChange={onFile} className="text-sm" />
-              )}
-              {uploading && <p role="status" className="text-sm text-gray-600">Mengunggah dan membaca PDF...</p>}
-              {uploadMsg && (
-                <p role={uploadMsg.ok ? "status" : "alert"} className={`text-sm ${uploadMsg.ok ? "text-green-800" : "text-red-700"}`}>
-                  {uploadMsg.text}
-                </p>
-              )}
-            </div>
-          </>
-        )}
+                    {mode === "topik" ? (
+                      <div className="flex flex-col gap-2">
+                        <label htmlFor="topik" className="sr-only">
+                          Topik pelajaran
+                        </label>
+                        <textarea
+                          id="topik"
+                          rows={2}
+                          maxLength={500}
+                          value={draft.topik ?? ""}
+                          onChange={(e) => update({ topik: e.target.value })}
+                          placeholder="Contoh: KPK dan FPB"
+                          className="rounded-lg border border-line px-3 py-2"
+                        />
+                        <div className="flex flex-wrap gap-2" aria-label="Topik populer">
+                          {TOPIK_POPULER.map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => update({ topik: t })}
+                              className="rounded-full border border-line px-3 py-1 text-xs hover:border-brand hover:text-brand"
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : materi ? (
+                      <div className="flex items-center justify-between rounded-lg border border-line px-3 py-2.5 text-sm">
+                        <span className="min-w-0 truncate">
+                          {materi.nama} <span className="text-gray-500">({materi.karakter.toLocaleString("id-ID")} karakter)</span>
+                        </span>
+                        <button type="button" onClick={onRemove} aria-label="Hapus PDF" className="ml-2 rounded p-1 text-gray-500 hover:bg-surface-muted">
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 border-dashed border-line px-4 py-6 text-center hover:border-brand">
+                        {uploading ? <Loader2 size={20} className="animate-spin text-brand" /> : <FileUp size={20} className="text-gray-500" />}
+                        <span className="text-sm font-medium">{uploading ? "Mengunggah dan membaca PDF..." : "Pilih berkas PDF"}</span>
+                        <span className="text-xs text-gray-500">Maks. 20 MB dan 30 halaman, berisi teks (bukan hasil scan)</span>
+                        <input
+                          type="file"
+                          accept="application/pdf"
+                          disabled={uploading}
+                          className="sr-only"
+                          onChange={(e) => {
+                            void onFile(e.target.files?.[0]);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    )}
+                    {uploadMsg && (
+                      <p role={uploadMsg.ok ? "status" : "alert"} className={`text-sm ${uploadMsg.ok ? "text-emerald-700" : "text-danger"}`}>
+                        {uploadMsg.text}
+                      </p>
+                    )}
 
-        {step === 2 && (
-          <>
-            <div className="flex flex-col gap-1">
-              <label htmlFor="jenjang" className="text-sm font-medium">Kelas</label>
-              <select id="jenjang" value={draft.jenjang} onChange={(e) => update({ jenjang: Number(e.target.value) })}
-                className="rounded border border-gray-300 px-3 py-2">
-                {[1, 2, 3, 4, 5, 6].map((k) => <option key={k} value={k}>SD kelas {k}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-sm font-medium">Mata pelajaran</span>
-              <span className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm">Matematika (mapel lain menyusul)</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label htmlFor="tujuan" className="text-sm font-medium">Tujuan pembelajaran (opsional)</label>
-              <textarea id="tujuan" rows={3} maxLength={500} value={draft.tujuan ?? ""} onChange={(e) => update({ tujuan: e.target.value })}
-                placeholder="Contoh: Siswa dapat menentukan KPK dan FPB dari dua bilangan"
-                className="rounded border border-gray-300 px-3 py-2" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label htmlFor="halaman" className="text-sm font-medium">Jumlah halaman: {draft.jumlah_halaman}</label>
-              <input id="halaman" type="range" min={4} max={12} value={draft.jumlah_halaman}
-                onChange={(e) => update({ jumlah_halaman: Number(e.target.value) })} />
-              <span className="text-xs text-gray-500">4 sampai 12 halaman.</span>
-            </div>
-          </>
-        )}
+                    {tujuanOpen ? (
+                      <div className="flex flex-col gap-1">
+                        <label htmlFor="tujuan" className="text-sm font-medium">
+                          Tujuan pembelajaran
+                        </label>
+                        <textarea
+                          id="tujuan"
+                          rows={2}
+                          maxLength={500}
+                          value={draft.tujuan ?? ""}
+                          onChange={(e) => update({ tujuan: e.target.value })}
+                          placeholder="Contoh: Siswa dapat menentukan KPK dan FPB dari dua bilangan"
+                          className="rounded-lg border border-line px-3 py-2 text-sm"
+                        />
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setTujuanOpen(true)} className="w-fit text-sm text-brand underline">
+                        + Tambah tujuan pembelajaran (opsional)
+                      </button>
+                    )}
+                  </div>
+                )}
 
-        {step === 3 && (
-          <>
-            <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium">Gaya visual</legend>
-              {GAYA.map((g) => (
-                <label key={g.id} className={`flex cursor-pointer items-start gap-3 rounded border px-3 py-2 ${draft.gaya === g.id ? "border-black" : "border-gray-300"}`}>
-                  <input type="radio" name="gaya" checked={draft.gaya === g.id} onChange={() => update({ gaya: g.id })} className="mt-1" />
-                  <span>
-                    <span className="block font-medium">{g.nama}</span>
-                    <span className="block text-xs text-gray-500">{g.deskripsi}</span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
+                {step === 2 && (
+                  <div className="flex flex-col gap-5">
+                    <fieldset>
+                      <legend className="sr-only">Kelas</legend>
+                      <div className="grid grid-cols-3 gap-3">
+                        {[1, 2, 3, 4, 5, 6].map((k) => (
+                          <Pilihan key={k} aktif={draft.jenjang === k} onClick={() => update({ jenjang: k })} className="px-3 py-4 text-center">
+                            <span className="block text-xs text-gray-500">SD</span>
+                            <span className="block text-lg font-semibold">Kelas {k}</span>
+                          </Pilihan>
+                        ))}
+                      </div>
+                    </fieldset>
+                    <fieldset>
+                      <legend className="text-sm font-medium">Jumlah halaman</legend>
+                      <div className="mt-2 grid grid-cols-5 gap-2">
+                        {HALAMAN.map((n) => (
+                          <Pilihan key={n} aktif={draft.jumlah_halaman === n} onClick={() => update({ jumlah_halaman: n })} className="py-2 text-center font-semibold">
+                            {n}
+                          </Pilihan>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs text-gray-500">Mata pelajaran: Matematika. Gambar nanti memakai 1 kredit per halaman.</p>
+                    </fieldset>
+                  </div>
+                )}
 
-            <dl className="rounded bg-gray-50 p-4 text-sm">
-              <div className="flex justify-between"><dt>Judul</dt><dd>{draft.judul}</dd></div>
-              <div className="flex justify-between"><dt>Topik</dt><dd>{draft.topik?.trim() || (materi ? "Dari PDF" : "-")}</dd></div>
-              <div className="flex justify-between"><dt>Kelas</dt><dd>SD kelas {draft.jenjang}</dd></div>
-              <div className="flex justify-between"><dt>Halaman</dt><dd>{draft.jumlah_halaman}</dd></div>
-              <div className="flex justify-between"><dt>Materi PDF</dt><dd>{materi ? materi.nama : "Tidak ada"}</dd></div>
-            </dl>
+                {step === 3 && (
+                  <fieldset>
+                    <legend className="sr-only">Gaya visual</legend>
+                    <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                      {GAYA.map((g) => (
+                        <Pilihan key={g.id} aktif={draft.gaya === g.id} onClick={() => update({ gaya: g.id })} className="overflow-hidden text-left">
+                          <span className="relative block aspect-[4/3] w-full">
+                            <Image src={g.gambar} alt="" fill sizes="(min-width: 640px) 180px, 33vw" className="object-cover" />
+                          </span>
+                          <span className="block px-2 py-2 sm:px-3">
+                            <span className="block text-xs font-semibold sm:text-sm">{g.nama}</span>
+                            <span className="hidden text-xs text-gray-500 sm:block">{g.deskripsi}</span>
+                          </span>
+                        </Pilihan>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
 
-            {showErrors && errors.length > 0 && (
-              <ul role="alert" className="list-disc pl-5 text-sm text-red-700">
-                {errors.map((e) => <li key={e}>{e}</li>)}
-              </ul>
+                {step === 4 && (
+                  <div className="flex flex-col gap-3">
+                    <label htmlFor="cerita" className="sr-only">
+                      Alur cerita
+                    </label>
+                    <textarea
+                      id="cerita"
+                      rows={5}
+                      maxLength={MAX_CERITA}
+                      value={draft.cerita ?? ""}
+                      onChange={(e) => update({ cerita: e.target.value })}
+                      placeholder="Contoh: Doni, siswa kelas 5, harus membagi kue untuk teman sekelasnya. Ia belajar FPB bersama Kiki..."
+                      className="rounded-lg border border-line px-3 py-2"
+                    />
+                    <p className="text-right text-xs text-gray-500">
+                      {(draft.cerita ?? "").length} / {MAX_CERITA} karakter
+                    </p>
+                    <p className="text-sm text-gray-600">Butuh inspirasi? Klik salah satu contoh:</p>
+                    <div className="flex flex-col gap-2">
+                      {contohCerita(draft.topik?.trim() ?? "").map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => update({ cerita: c })}
+                          className="rounded-lg border border-line px-3 py-2 text-left text-sm hover:border-brand"
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                    {sudahAdaNaskah && (
+                      <p className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900">
+                        Naskah untuk komik ini sudah dibuat. Buka halaman naskah untuk meninjaunya.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {step === 1 && !bolehLanjut && <p className="mt-3 text-xs text-gray-500">Isi topik atau unggah PDF untuk lanjut.</p>}
+                {step === 3 && !bolehLanjut && <p className="mt-3 text-xs text-gray-500">Pilih satu gaya untuk lanjut.</p>}
+              </>
             )}
-          </>
-        )}
-      </section>
 
-      <div className="mt-8 flex items-center justify-between">
-        {step > 1 ? (
-          <button type="button" onClick={() => goto(step - 1)} className="rounded border border-gray-300 px-4 py-2">Kembali</button>
-        ) : (
-          <Link href="/dashboard" className="rounded border border-gray-300 px-4 py-2">Ke dashboard</Link>
-        )}
-        {step < 3 ? (
-          <button type="button" onClick={() => goto(step + 1)} className="rounded bg-black px-4 py-2 font-medium text-white">Lanjut</button>
-        ) : errors.length === 0 ? (
-          <Link href="/dashboard" className="rounded bg-black px-4 py-2 font-medium text-white">Selesai, simpan draft</Link>
-        ) : (
-          <button type="button" onClick={() => setShowErrors(true)} className="rounded bg-black px-4 py-2 font-medium text-white">
-            Selesai, simpan draft
-          </button>
-        )}
+            {error && (
+              <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-b-2xl border-t border-line px-5 py-4 sm:px-8">
+          <div className="mb-4 flex justify-center gap-1.5" aria-hidden>
+            {Array.from({ length: WIZARD_STEPS }, (_, i) => (
+              <span key={i} className={`h-1.5 rounded-full transition-all ${i + 1 === step ? "w-6 bg-brand" : "w-1.5 bg-gray-300"}`} />
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {step === 1 ? (
+              <Link href="/dashboard" className="flex items-center justify-center gap-1 rounded-lg border border-line px-4 py-2.5 text-sm font-medium hover:bg-surface-muted">
+                <ArrowLeft size={16} /> Beranda
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled={generating}
+                onClick={() => goto(step - 1)}
+                className="flex items-center justify-center gap-1 rounded-lg border border-line px-4 py-2.5 text-sm font-medium hover:bg-surface-muted disabled:opacity-50"
+              >
+                <ArrowLeft size={16} /> Kembali
+              </button>
+            )}
+
+            {step < WIZARD_STEPS ? (
+              <button
+                type="button"
+                disabled={!bolehLanjut}
+                onClick={() => goto(step + 1)}
+                className="flex items-center justify-center gap-1 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
+              >
+                Lanjut <ArrowRight size={16} />
+              </button>
+            ) : sudahAdaNaskah ? (
+              <Link
+                href={`/comics/${comicId}/naskah`}
+                className="flex items-center justify-center gap-1 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-brand-foreground hover:bg-brand-hover"
+              >
+                Lihat naskah <ArrowRight size={16} />
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled={generating || kurangKredit}
+                onClick={() => void buatNaskah()}
+                className="flex items-center justify-center gap-1.5 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
+              >
+                {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {generating ? "Membuat..." : `Buat naskah · ${NASKAH_COST} kredit`}
+              </button>
+            )}
+          </div>
+          {step === WIZARD_STEPS && !sudahAdaNaskah && kurangKredit && (
+            <p className="mt-2 text-center text-xs text-danger">
+              Kredit tidak cukup. Saldo {saldo}, butuh {NASKAH_COST}.
+            </p>
+          )}
+        </div>
       </div>
     </main>
   );

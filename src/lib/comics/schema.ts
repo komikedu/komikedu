@@ -1,10 +1,13 @@
 import { z } from "zod";
 
 export const GAYA = [
-  { id: "kartun-cerah", nama: "Kartun cerah", deskripsi: "Warna cerah, garis tegas" },
-  { id: "anime-lembut", nama: "Anime lembut", deskripsi: "Mata besar, warna pastel" },
-  { id: "buku-cerita", nama: "Buku cerita", deskripsi: "Gaya cat air yang hangat" },
+  { id: "kartun-cerah", nama: "Kartun cerah", deskripsi: "Warna cerah, garis tegas", gambar: "/gaya/kartun-cerah.webp" },
+  { id: "anime-lembut", nama: "Anime lembut", deskripsi: "Mata besar, warna pastel", gambar: "/gaya/anime-lembut.webp" },
+  { id: "buku-cerita", nama: "Buku cerita", deskripsi: "Gaya cat air yang hangat", gambar: "/gaya/buku-cerita.webp" },
 ] as const;
+
+export const MAX_CERITA = 2000;
+export const WIZARD_STEPS = 4;
 
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;
 export const MAX_PDF_PAGES = 30;
@@ -17,7 +20,9 @@ export const DraftSchema = z.object({
   tujuan: z.string().trim().max(500).nullable(),
   jumlah_halaman: z.number().int().min(4).max(12),
   gaya: z.enum(["kartun-cerah", "anime-lembut", "buku-cerita"]).nullable(),
-  wizard_step: z.number().int().min(1).max(3),
+  /** Alur cerita yang ditulis guru (opsional). Kosong = AI yang menentukan cerita. */
+  cerita: z.string().trim().max(MAX_CERITA).nullable(),
+  wizard_step: z.number().int().min(1).max(WIZARD_STEPS),
 });
 export type Draft = z.infer<typeof DraftSchema>;
 

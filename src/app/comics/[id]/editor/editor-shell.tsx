@@ -19,7 +19,8 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { LAYOUTS } from "@/lib/ai/layouts";
-import { clearHistory, redo, selectSelectedBubble, undo, useEditor } from "@/lib/editor/store";
+import { MAX_PANELS_PER_PAGE } from "@/lib/editor/panel-ops";
+import { clearHistory, redo, selectSelectedBubble, selectSelectedPanel, undo, useEditor } from "@/lib/editor/store";
 import type { BubbleKind, EditorPage } from "@/lib/editor/types";
 
 const EditorCanvas = dynamic(() => import("./editor-canvas"), {
@@ -125,9 +126,16 @@ function LayersPanel() {
       <ul className="mt-2 space-y-1">
         {page.panels.map((panel, i) => (
           <li key={panel.id}>
-            <div className="flex items-center gap-1 px-1 py-1 text-sm font-medium">
+            <button
+              type="button"
+              onClick={() => select(panel.id)}
+              aria-current={panel.id === selectedId}
+              className={`flex w-full items-center gap-1 rounded-md px-1 py-1 text-left text-sm font-medium ${
+                panel.id === selectedId ? "bg-blue-600 text-white" : "hover:bg-surface-muted"
+              }`}
+            >
               <ChevronDown size={14} /> Panel {i + 1}
-            </div>
+            </button>
             <ul className="ml-4 space-y-1">
               {page.bubbles
                 .filter((b) => b.panelId === panel.id)
@@ -185,11 +193,54 @@ function PageTab({ page }: { page: EditorPage }) {
   );
 }
 
+function PanelTab() {
+  const panel = useEditor(selectSelectedPanel);
+  const page = useEditor((s) => s.pages.find((p) => p.id === s.activePageId));
+  const split = useEditor((s) => s.splitPanel);
+  const dup = useEditor((s) => s.duplicatePanel);
+  const del = useEditor((s) => s.deletePanel);
+  if (!panel || !page) return null;
+  const nomor = page.panels.findIndex((p) => p.id === panel.id) + 1;
+  const penuh = page.panels.length >= MAX_PANELS_PER_PAGE;
+  const btn = "rounded-lg border border-line px-3 py-2 text-xs hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40";
+
+  return (
+    <div className="space-y-4 p-4 text-sm">
+      <div>
+        <h3 className="font-semibold">Panel {nomor}</h3>
+        <p className="mt-1 text-xs text-gray-500">
+          {Math.round(panel.w)} x {Math.round(panel.h)} · seret untuk memindah, tarik sudut untuk mengubah ukuran
+        </p>
+      </div>
+      <div>
+        <p className="text-xs font-medium text-gray-600">Adegan dari naskah</p>
+        <p className="mt-1 rounded border border-line bg-surface-muted p-2 text-xs text-gray-700">{panel.adegan || "Belum ada adegan (panel baru)."}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" disabled={penuh} onClick={() => split(panel.id, "horizontal")} className={btn}>
+          Bagi kiri-kanan
+        </button>
+        <button type="button" disabled={penuh} onClick={() => split(panel.id, "vertikal")} className={btn}>
+          Bagi atas-bawah
+        </button>
+        <button type="button" disabled={penuh} onClick={() => dup(panel.id)} className={btn}>
+          Duplikat
+        </button>
+        <button type="button" disabled={page.panels.length <= 1} onClick={() => del(panel.id)} className={`${btn} text-danger`}>
+          Hapus panel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function LayerTab() {
+  const panel = useEditor(selectSelectedPanel);
   const bubble = useEditor(selectSelectedBubble);
   const update = useEditor((s) => s.updateBubble);
   const del = useEditor((s) => s.deleteBubble);
-  if (!bubble) return <p className="p-4 text-sm text-gray-500">Pilih balon di kanvas untuk mengubahnya.</p>;
+  if (panel) return <PanelTab />;
+  if (!bubble) return <p className="p-4 text-sm text-gray-500">Pilih panel atau balon di kanvas untuk mengubahnya.</p>;
 
   return (
     <div className="space-y-4 p-4 text-sm">
@@ -391,7 +442,10 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
         redo();
       } else if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
         e.preventDefault();
-        del(selectedId);
+        const st = useEditor.getState();
+        const isPanel = st.pages.some((p) => p.id === st.activePageId && p.panels.some((x) => x.id === selectedId));
+        if (isPanel) st.deletePanel(selectedId);
+        else del(selectedId);
       } else if (e.key === "Escape") {
         setTool("move");
       }

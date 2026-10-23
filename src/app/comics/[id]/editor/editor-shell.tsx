@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { LAYOUTS } from "@/lib/ai/layouts";
 import { MAX_PANELS_PER_PAGE } from "@/lib/editor/panel-ops";
-import { clearHistory, redo, selectSelectedBubble, selectSelectedPanel, undo, useEditor } from "@/lib/editor/store";
+import { applyPanelImages, clearHistory, redo, selectSelectedBubble, selectSelectedPanel, undo, useEditor } from "@/lib/editor/store";
 import type { BubbleKind, EditorPage } from "@/lib/editor/types";
 
 const EditorCanvas = dynamic(() => import("./editor-canvas"), {
@@ -167,7 +167,23 @@ function LayersPanel() {
   );
 }
 
-function PageTab({ page }: { page: EditorPage }) {
+type GenerateProps = {
+  tersimpan: boolean;
+  saldo: number;
+  generating: boolean;
+  error: string | null;
+  onGenerate: () => void;
+  melengkapi: boolean;
+  pesanLengkapi: { ok: boolean; teks: string } | null;
+  onLengkapi: () => void;
+};
+
+const GAMBAR_COST = 1;
+
+function PageTab({ page, gen }: { page: EditorPage; gen: GenerateProps }) {
+  const tanpaAdegan = page.panels.findIndex((p) => !p.adegan.trim());
+  const sudahAdaGambar = page.panels.some((p) => p.imageUrl);
+  const kurang = gen.saldo < GAMBAR_COST;
   return (
     <div className="space-y-4 p-4 text-sm">
       <div>
@@ -177,17 +193,51 @@ function PageTab({ page }: { page: EditorPage }) {
           {page.panels.map((p, i) => (
             <li key={p.id} className="rounded border border-line p-2">
               <p className="text-xs font-semibold">Panel {i + 1}</p>
-              <p className="mt-0.5 text-xs text-gray-600">{p.adegan || "Belum ada adegan."}</p>
+              <p className={`mt-0.5 text-xs ${p.adegan ? "text-gray-600" : "text-amber-700"}`}>{p.adegan || "Belum ada adegan."}</p>
             </li>
           ))}
         </ol>
+        {tanpaAdegan >= 0 && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs text-amber-900">Ada panel tanpa naskah. AI bisa menuliskan adegan dan dialognya agar menyambung dengan panel lain.</p>
+            <button
+              type="button"
+              disabled={!gen.tersimpan || gen.melengkapi || gen.generating}
+              onClick={gen.onLengkapi}
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-brand bg-surface px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/5 disabled:opacity-50"
+            >
+              {gen.melengkapi ? "Menulis naskah..." : "Lengkapi naskah dengan AI (gratis)"}
+            </button>
+          </div>
+        )}
+        {gen.pesanLengkapi && (
+          <p role={gen.pesanLengkapi.ok ? "status" : "alert"} className={`mt-2 rounded p-2 text-xs ${gen.pesanLengkapi.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>
+            {gen.pesanLengkapi.teks}
+          </p>
+        )}
       </div>
       <div>
         <h3 className="font-semibold">Gambar halaman</h3>
-        <p className="mt-1 text-xs text-gray-500">Satu gambar per halaman, lalu dipotong per panel. 1 kredit per halaman.</p>
-        <button type="button" disabled className="mt-2 w-full rounded-lg bg-brand px-4 py-2 font-medium text-brand-foreground opacity-50">
-          Generate halaman (segera hadir)
+        <p className="mt-1 text-xs text-gray-500">
+          Satu gambar untuk semua panel, lalu dipotong per panel. {GAMBAR_COST} kredit per halaman, dikembalikan bila gagal.
+        </p>
+        <button
+          type="button"
+          disabled={!gen.tersimpan || gen.generating || kurang || tanpaAdegan >= 0}
+          onClick={gen.onGenerate}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 font-medium text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
+        >
+          {gen.generating ? "Membuat gambar..." : `${sudahAdaGambar ? "Buat ulang gambar" : "Buat gambar halaman"} · ${GAMBAR_COST} kredit`}
         </button>
+        {gen.generating && <p role="status" className="mt-2 text-xs text-gray-600">Biasanya 20 sampai 60 detik. Jangan tutup halaman ini.</p>}
+        {!gen.tersimpan && <p className="mt-2 text-xs text-gray-500">Hanya tersedia di komik yang tersimpan.</p>}
+        {tanpaAdegan >= 0 && <p className="mt-2 text-xs text-amber-700">Panel {tanpaAdegan + 1} belum punya adegan. Pilih panelnya lalu isi adegan.</p>}
+        {kurang && <p className="mt-2 text-xs text-danger">Kredit tidak cukup.</p>}
+        {gen.error && (
+          <p role="alert" className="mt-2 rounded bg-red-50 p-2 text-xs text-red-700">
+            {gen.error}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -199,6 +249,7 @@ function PanelTab() {
   const split = useEditor((s) => s.splitPanel);
   const dup = useEditor((s) => s.duplicatePanel);
   const del = useEditor((s) => s.deletePanel);
+  const updatePanel = useEditor((s) => s.updatePanel);
   if (!panel || !page) return null;
   const nomor = page.panels.findIndex((p) => p.id === panel.id) + 1;
   const penuh = page.panels.length >= MAX_PANELS_PER_PAGE;
@@ -213,8 +264,16 @@ function PanelTab() {
         </p>
       </div>
       <div>
-        <p className="text-xs font-medium text-gray-600">Adegan dari naskah</p>
-        <p className="mt-1 rounded border border-line bg-surface-muted p-2 text-xs text-gray-700">{panel.adegan || "Belum ada adegan (panel baru)."}</p>
+        <p className="text-xs font-medium text-gray-600">Adegan (dipakai untuk membuat gambar)</p>
+        <textarea
+          aria-label="Adegan panel"
+          rows={4}
+          maxLength={1000}
+          value={panel.adegan}
+          onChange={(e) => updatePanel(panel.id, { adegan: e.target.value })}
+          placeholder="Gambarkan adegannya tanpa teks, mis. Kiki menunjuk lampu merah di depan toko kue."
+          className="mt-1 w-full rounded border border-line px-2 py-1.5 text-xs"
+        />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <button type="button" disabled={penuh} onClick={() => split(panel.id, "horizontal")} className={btn}>
@@ -339,6 +398,7 @@ function useAutosave(comicId: string | undefined, ready: boolean) {
   const inFlight = useRef(false);
   const again = useRef(false);
   const dirty = useRef(false);
+  const gagal = useRef(false);
 
   const flush = useCallback(async (keepalive = false) => {
     if (!comicId) return;
@@ -351,6 +411,7 @@ function useAutosave(comicId: string | undefined, ready: boolean) {
     dirty.current = false;
     const res = await postSave(comicId, useEditor.getState().pages, keepalive);
     inFlight.current = false;
+    gagal.current = !res.ok;
     if (!res.ok) {
       dirty.current = true;
       setError(res.error);
@@ -401,7 +462,25 @@ function useAutosave(comicId: string | undefined, ready: boolean) {
     };
   }, [comicId, ready, flush]);
 
-  return { state, error, retry: flush };
+  /** Simpan sekarang dan tunggu sampai server menerima versi terakhir (dipakai sebelum generate gambar). */
+  const simpanSekarang = useCallback(async () => {
+    if (!comicId) return false;
+    if (timer.current) clearTimeout(timer.current);
+    dirty.current = true; // selalu kirim versi terkini, termasuk halaman yang belum pernah tersimpan
+    const mulai = Date.now();
+    while (Date.now() - mulai < 15000) {
+      if (inFlight.current) {
+        await new Promise((r) => setTimeout(r, 150));
+        continue;
+      }
+      if (!dirty.current) return true;
+      await flush();
+      if (gagal.current) return false;
+    }
+    return false;
+  }, [comicId, flush]);
+
+  return { state, error, retry: flush, simpanSekarang };
 }
 
 export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }: { comicId?: string; title: string; fontFamily: string; initialPages: EditorPage[]; kredit: number }) {
@@ -416,6 +495,88 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
   const [tab, setTab] = useState<"halaman" | "layer">("halaman");
   const [ready, setReady] = useState(false);
   const save = useAutosave(comicId, ready);
+  const [saldo, setSaldo] = useState(kredit);
+  const [generatingPage, setGeneratingPage] = useState<string | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  const [melengkapi, setMelengkapi] = useState(false);
+  const [pesanLengkapi, setPesanLengkapi] = useState<{ ok: boolean; teks: string } | null>(null);
+
+  async function lengkapiNaskah(pageId: string) {
+    if (!comicId) return;
+    const pg = useEditor.getState().pages.find((p) => p.id === pageId);
+    if (!pg) return;
+    setPesanLengkapi(null);
+    setMelengkapi(true);
+    try {
+      // kirim isi editor saat ini (bisa belum tersimpan) sebagai konteks
+      const panels = pg.panels.map((p) => ({
+        id: p.id,
+        adegan: p.adegan,
+        dialog: pg.bubbles
+          .filter((b) => b.panelId === p.id && b.text.trim())
+          .slice(0, 6)
+          .map((b) => ({ jenis: b.kind, teks: b.text.slice(0, 300) })),
+      }));
+      const res = await fetch(`/api/comics/${comicId}/pages/${pageId}/lengkapi`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ panels }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { ok: true; panels: { id: string; adegan: string; dialog: { karakter: string; jenis: "bicara" | "pikir" | "narasi"; teks: string }[] }[]; peringatan: string[] }
+        | { ok: false; error: string }
+        | null;
+      if (res.ok && json?.ok) {
+        useEditor.getState().isiPanelKosong(pageId, json.panels);
+        setPesanLengkapi({
+          ok: json.peringatan.length === 0,
+          teks: json.peringatan.length
+            ? `${json.panels.length} panel diisi, tapi perlu dicek: ${json.peringatan.join(" ")}`
+            : `${json.panels.length} panel diisi. Periksa adegan dan balonnya, lalu buat gambar.`,
+        });
+      } else {
+        setPesanLengkapi({ ok: false, teks: json && !json.ok ? json.error : "Gagal melengkapi naskah. Coba lagi." });
+      }
+    } catch {
+      setPesanLengkapi({ ok: false, teks: "Tidak ada koneksi. Coba lagi." });
+    } finally {
+      setMelengkapi(false);
+    }
+  }
+
+  async function generateHalaman(pageId: string) {
+    if (!comicId) return;
+    setGenError(null);
+    setGeneratingPage(pageId);
+    try {
+      // server membaca posisi panel dan adegan dari database, jadi simpan dulu versi terakhir
+      if (!(await save.simpanSekarang())) {
+        setGenError("Gagal menyimpan perubahan editor. Coba lagi.");
+        return;
+      }
+      const res = await fetch(`/api/comics/${comicId}/pages/${pageId}/generate`, { method: "POST" });
+      const json = (await res.json().catch(() => null)) as
+        | { ok: true; panels: { id: string; imageUrl: string }[]; saldo: number }
+        | { ok: false; error: string }
+        | null;
+      if (res.ok && json?.ok) {
+        applyPanelImages(Object.fromEntries(json.panels.map((p) => [p.id, p.imageUrl])));
+        setSaldo(json.saldo);
+      } else {
+        setGenError(json && !json.ok ? json.error : "Gagal membuat gambar. Coba lagi.");
+      }
+    } catch {
+      setGenError("Tidak ada koneksi. Coba lagi.");
+    } finally {
+      setGeneratingPage(null);
+    }
+  }
+
+  // akses store dari konsol browser untuk debugging (hanya development)
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") (window as unknown as { __editor?: typeof useEditor }).__editor = useEditor;
+  }, []);
 
   useEffect(() => {
     init(initialPages);
@@ -448,6 +609,7 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
         else del(selectedId);
       } else if (e.key === "Escape") {
         setTool("move");
+        useEditor.getState().setCornerEdit(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -462,7 +624,7 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
         <div className="flex items-center justify-between border-b border-line p-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{title}</p>
-            <p className="text-xs text-gray-500">{kredit} kredit</p>
+            <p className="text-xs text-gray-500">{saldo} kredit</p>
             {comicId ? (
               <p role="status" className={`text-xs ${save.state === "error" ? "text-danger" : "text-gray-500"}`}>
                 {save.state === "dirty" && "Perubahan belum disimpan..."}
@@ -493,7 +655,7 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
         <Link href="/dashboard" className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-surface px-4 py-1.5 text-sm shadow">
           <Home size={14} /> Dashboard
         </Link>
-        <EditorCanvas fontFamily={fontFamily} />
+        <EditorCanvas fontFamily={fontFamily} generating={generatingPage === page.id} />
 
         <div role="toolbar" aria-label="Alat" className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-surface p-1.5 shadow-lg">
           <ToolButton label="Pilih" active={tool === "move"} onClick={() => setTool("move")}>
@@ -548,7 +710,23 @@ export function EditorShell({ comicId, title, fontFamily, initialPages, kredit }
           ))}
         </div>
         <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
-          {tab === "halaman" ? <PageTab page={page} /> : <LayerTab />}
+          {tab === "halaman" ? (
+            <PageTab
+              page={page}
+              gen={{
+                tersimpan: !!comicId,
+                saldo,
+                generating: generatingPage !== null,
+                error: genError,
+                onGenerate: () => void generateHalaman(page.id),
+                melengkapi,
+                pesanLengkapi,
+                onLengkapi: () => void lengkapiNaskah(page.id),
+              }}
+            />
+          ) : (
+            <LayerTab />
+          )}
         </div>
       </aside>
     </div>

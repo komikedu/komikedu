@@ -33,6 +33,7 @@ function roundTrip(pages: EditorPage[]): EditorPage[] {
           image_url: null,
           posisi: p.posisi,
           tampil: p.tampil,
+          adegan: p.adegan,
           bubbles: rows.bubbles
             .filter((b) => b.panel_id === p.id)
             .map((b) => ({ ...b })),
@@ -60,10 +61,10 @@ describe("toRows / fromNested", () => {
     expect(rows.panels.filter((p) => p.page_id === rows.pages[0].id).map((p) => p.urutan)).toEqual([1, 2, 3, 4]);
   });
 
-  it("baris panel tidak membawa image_url, status, atau script_json dari klien", () => {
+  it("baris panel tidak membawa image_url, status, atau script_json dari klien (adegan boleh)", () => {
     const rows = toRows("c1", [samplePage()]);
     for (const p of rows.panels) {
-      expect(Object.keys(p).sort()).toEqual(["id", "page_id", "posisi", "tampil", "urutan"]);
+      expect(Object.keys(p).sort()).toEqual(["adegan", "id", "page_id", "posisi", "tampil", "urutan"]);
     }
   });
 });

@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { cropPanels, detectPanels } from "./crop";
+import { cropPanels, detectPanels, matchPanels } from "./crop";
 import { LAYOUTS } from "./layouts";
 
 const W = 600;
@@ -66,7 +66,7 @@ describe("cropPanels", () => {
       const blank = new Uint8Array(
         await sharp({ create: { width: W, height: H, channels: 3, background: "#fff" } }).png().toBuffer(),
       );
-      const panels = await cropPanels(blank, id);
+      const panels = await cropPanels(blank, LAYOUTS.find((l) => l.id === id)!.panels);
       expect(panels).toHaveLength(count);
       for (const p of panels) {
         expect(p.width).toBeGreaterThan(0);
@@ -81,7 +81,7 @@ describe("cropPanels", () => {
       { x: 0.06, y: 0.52, w: 0.42, h: 0.42 },
       { x: 0.52, y: 0.52, w: 0.42, h: 0.42 },
     ]);
-    const panels = await cropPanels(page, "3-satu-atas-dua-bawah");
+    const panels = await cropPanels(page, LAYOUTS.find((l) => l.id === "3-satu-atas-dua-bawah")!.panels);
     expect(panels).toHaveLength(3);
     // isi panel hanya warna krem: tidak ada piksel putih (margin) atau gelap (bingkai) di tepi
     for (const p of panels) {
@@ -89,5 +89,37 @@ describe("cropPanels", () => {
       expect(data[0]).toBeGreaterThan(200);
       expect(data[2]).toBeLessThan(200); // krem, bukan putih
     }
+  });
+});
+
+describe("matchPanels", () => {
+  const harap = [
+    { x: 0.06, y: 0.05, w: 0.88, h: 0.43 },
+    { x: 0.06, y: 0.52, w: 0.42, h: 0.43 },
+    { x: 0.52, y: 0.52, w: 0.42, h: 0.43 },
+  ];
+
+  it("memasangkan panel terdeteksi ke kotak editor berdasarkan tumpang-tindih, bukan urutan", () => {
+    // urutan deteksi sengaja diacak dan posisinya sedikit bergeser
+    const deteksi = [
+      { x: 0.53, y: 0.5, w: 0.43, h: 0.46 },
+      { x: 0.04, y: 0.03, w: 0.92, h: 0.44 },
+      { x: 0.04, y: 0.5, w: 0.44, h: 0.46 },
+    ];
+    const hasil = matchPanels(harap, deteksi);
+    expect(hasil.map((h) => h.rect)).toEqual([deteksi[1], deteksi[2], deteksi[0]]);
+    expect(hasil.every((h) => h.terdeteksi)).toBe(true);
+  });
+
+  it("memakai kotak editor bila deteksi gagal atau tidak mirip", () => {
+    expect(matchPanels(harap, null).map((h) => h.terdeteksi)).toEqual([false, false, false]);
+    const jauh = [{ x: 0.9, y: 0.9, w: 0.05, h: 0.05 }];
+    expect(matchPanels(harap, jauh)[0]).toEqual({ rect: harap[0], terdeteksi: false });
+  });
+
+  it("satu panel terdeteksi tidak dipakai dua kali", () => {
+    const satu = [{ x: 0.05, y: 0.5, w: 0.9, h: 0.46 }];
+    const hasil = matchPanels(harap, satu);
+    expect(hasil.filter((h) => h.terdeteksi)).toHaveLength(1);
   });
 });

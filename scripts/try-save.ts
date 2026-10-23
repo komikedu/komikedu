@@ -11,7 +11,7 @@ const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SU
 async function load(comicId: string) {
   const { data, error } = await admin
     .from("pages")
-    .select("id, urutan, template_layout, panels(id, urutan, script_json, image_url, posisi, tampil, bubbles(id, jenis, teks, posisi, ukuran, ekor, font_size, tampil, urutan))")
+    .select("id, urutan, template_layout, panels(id, urutan, script_json, image_url, posisi, tampil, adegan, bubbles(id, jenis, teks, posisi, ukuran, ekor, font_size, tampil, urutan))")
     .eq("comic_id", comicId)
     .order("urutan");
   if (error) throw error;

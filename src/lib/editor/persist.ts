@@ -16,6 +16,14 @@ const PanelSchema = z.object({
   w: z.number().finite().min(1).max(PAGE_W),
   h: z.number().finite().min(1).max(PAGE_H),
   visible: z.boolean(),
+  /** deskripsi adegan untuk membuat gambar; bisa diedit guru di editor */
+  adegan: z.string().max(1000),
+  /** sudut panel miring; null/absen = panel kotak */
+  corners: z
+    .array(z.object({ x: coord(PAGE_W), y: coord(PAGE_H) }))
+    .length(4)
+    .nullable()
+    .optional(),
 });
 
 const BubbleSchema = z.object({
@@ -65,7 +73,7 @@ export const EditorPayloadSchema = z
 
 export type EditorRows = {
   pages: { id: string; comic_id: string; urutan: number; template_layout: string }[];
-  panels: { id: string; page_id: string; urutan: number; posisi: { x: number; y: number; w: number; h: number }; tampil: boolean }[];
+  panels: { id: string; page_id: string; urutan: number; posisi: { x: number; y: number; w: number; h: number; corners?: { x: number; y: number }[] }; tampil: boolean; adegan: string }[];
   bubbles: {
     id: string;
     panel_id: string;
@@ -84,7 +92,7 @@ export type EditorRows = {
 export type SavablePage = {
   id: string;
   layoutId: string;
-  panels: Pick<Panel, "id" | "x" | "y" | "w" | "h" | "visible">[];
+  panels: Pick<Panel, "id" | "x" | "y" | "w" | "h" | "visible" | "adegan" | "corners">[];
   bubbles: Bubble[];
 };
 
@@ -97,8 +105,9 @@ export function toRows(comicId: string, pages: SavablePage[]): EditorRows {
         id: p.id,
         page_id: page.id,
         urutan: i + 1,
-        posisi: { x: p.x, y: p.y, w: p.w, h: p.h },
+        posisi: { x: p.x, y: p.y, w: p.w, h: p.h, ...(p.corners ? { corners: p.corners } : {}) },
         tampil: p.visible,
+        adegan: p.adegan,
       }),
     );
     page.bubbles.forEach((b, i) =>
@@ -129,8 +138,9 @@ export type NestedPage = {
     urutan: number;
     script_json: { adegan?: string } | null;
     image_url: string | null;
-    posisi: { x: number; y: number; w: number; h: number } | null;
+    posisi: { x: number; y: number; w: number; h: number; corners?: { x: number; y: number }[] } | null;
     tampil: boolean;
+    adegan: string | null;
     bubbles: {
       id: string;
       jenis: string;
@@ -154,13 +164,15 @@ export function fromNested(rows: NestedPage[]): EditorPage[] {
       [...page.panels]
         .sort((a, b) => a.urutan - b.urutan)
         .forEach((p, pIdx) => {
-          const pos = p.posisi ?? { x: 0, y: 0, w: PAGE_W, h: PAGE_H };
+          const { corners, ...pos } = p.posisi ?? { x: 0, y: 0, w: PAGE_W, h: PAGE_H };
           panels.push({
             id: p.id,
             ...pos,
+            ...(corners?.length === 4 ? { corners } : {}),
             imageUrl: p.image_url,
             visible: p.tampil,
-            adegan: p.script_json?.adegan ?? "",
+            // kolom adegan (hasil edit di editor) didahulukan, lalu adegan asli dari naskah
+            adegan: p.adegan ?? p.script_json?.adegan ?? "",
           });
           for (const b of p.bubbles) {
             bubbles.push({

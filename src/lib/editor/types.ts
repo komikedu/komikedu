@@ -19,12 +19,20 @@ export type Bubble = {
   visible: boolean;
 };
 
+export type Point = { x: number; y: number };
+
 export type Panel = {
   id: string;
+  /** Kotak pembatas panel. Untuk panel miring, kotak ini membungkus keempat sudutnya. */
   x: number;
   y: number;
   w: number;
   h: number;
+  /**
+   * Sudut panel miring (koordinat halaman, urutan kiri-atas, kanan-atas, kanan-bawah, kiri-bawah).
+   * Kosong = panel kotak biasa.
+   */
+  corners?: Point[] | null;
   imageUrl: string | null;
   visible: boolean;
   /** Deskripsi adegan dari naskah yang sudah disetujui. */

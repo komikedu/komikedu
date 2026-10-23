@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createBubble, createPage, PAGE_MARGIN } from "./factory";
 import { EditorPayloadSchema } from "./persist";
 import { MAX_PANELS_PER_PAGE, MIN_PANEL, PANEL_GAP, deletePanel, duplicateBubble, duplicatePanel, movePanel, resizePanel, splitPanel } from "./panel-ops";
-import { clearHistory, undo, useEditor } from "./store";
+import { applyPanelImages, clearHistory, undo, useEditor } from "./store";
 import { PAGE_H, PAGE_W, type EditorPage } from "./types";
 
 function halaman(): EditorPage {
@@ -160,5 +160,64 @@ describe("store: operasi panel dan riwayat", () => {
     st().movePanel(id, 30, 0);
     expect(st().drag).toBeNull();
     expect(useEditor.temporal.getState().pastStates.length).toBe(before + 1);
+  });
+});
+
+describe("applyPanelImages", () => {
+  const st = () => useEditor.getState();
+  const page = () => st().pages.find((p) => p.id === st().activePageId)!;
+
+  beforeEach(() => {
+    st().init([halaman()]);
+    clearHistory();
+  });
+
+  it("memasang gambar tanpa menambah langkah riwayat, dan gambar tetap ada setelah undo", () => {
+    st().splitPanel(page().panels[1].id, "horizontal"); // satu langkah riwayat sebelum gambar dibuat
+    const id = page().panels[0].id;
+    const sebelum = useEditor.temporal.getState().pastStates.length;
+    applyPanelImages({ [id]: "https://contoh.supabase.co/panel.webp" });
+    expect(page().panels[0].imageUrl).toBe("https://contoh.supabase.co/panel.webp");
+    expect(useEditor.temporal.getState().pastStates.length).toBe(sebelum);
+    undo(); // membatalkan split, bukan gambar
+    expect(page().panels).toHaveLength(3);
+    expect(page().panels[0].imageUrl).toBe("https://contoh.supabase.co/panel.webp");
+  });
+});
+
+describe("isiPanelKosong", () => {
+  const st = () => useEditor.getState();
+  const page = () => st().pages.find((p) => p.id === st().activePageId)!;
+
+  beforeEach(() => {
+    st().init([halaman()]);
+    clearHistory();
+  });
+
+  it("mengisi adegan dan balon panel kosong dalam satu langkah riwayat, panel berisi tidak ditimpa", () => {
+    st().splitPanel(page().panels[0].id, "horizontal");
+    const baru = page().panels[1];
+    const lama = page().panels[0];
+    const balonAwal = page().bubbles.length;
+    const sebelum = useEditor.temporal.getState().pastStates.length;
+
+    st().isiPanelKosong(page().id, [
+      { id: baru.id, adegan: "Doni menunjuk lampu biru", dialog: [{ karakter: "Doni", jenis: "bicara", teks: "Yang biru tiap 6 detik!" }] },
+      { id: lama.id, adegan: "INI TIDAK BOLEH MENIMPA", dialog: [] },
+    ]);
+
+    expect(page().panels[1].adegan).toBe("Doni menunjuk lampu biru");
+    expect(page().panels[0].adegan).toBe("atas");
+    const balonBaru = page().bubbles.filter((b) => b.panelId === baru.id && b.text === "Yang biru tiap 6 detik!");
+    expect(balonBaru).toHaveLength(1);
+    const b = balonBaru[0];
+    expect(b.x).toBeGreaterThanOrEqual(baru.x);
+    expect(b.x + b.w).toBeLessThanOrEqual(baru.x + baru.w);
+    expect(page().bubbles.length).toBe(balonAwal + 1);
+    expect(useEditor.temporal.getState().pastStates.length).toBe(sebelum + 1);
+
+    undo();
+    expect(page().panels[1].adegan).toBe("");
+    expect(page().bubbles.length).toBe(balonAwal);
   });
 });

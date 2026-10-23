@@ -1,9 +1,27 @@
 import { z } from "zod";
 
 export const GAYA = [
-  { id: "kartun-cerah", nama: "Kartun cerah", deskripsi: "Warna cerah, garis tegas", gambar: "/gaya/kartun-cerah.webp" },
-  { id: "anime-lembut", nama: "Anime lembut", deskripsi: "Mata besar, warna pastel", gambar: "/gaya/anime-lembut.webp" },
-  { id: "buku-cerita", nama: "Buku cerita", deskripsi: "Gaya cat air yang hangat", gambar: "/gaya/buku-cerita.webp" },
+  {
+    id: "kartun-cerah",
+    nama: "Kartun cerah",
+    deskripsi: "Warna cerah, garis tegas",
+    gambar: "/gaya/kartun-cerah.webp",
+    prompt: "kartun anak berwarna cerah, garis tepi hitam tegas, warna datar",
+  },
+  {
+    id: "anime-lembut",
+    nama: "Anime lembut",
+    deskripsi: "Mata besar, warna pastel",
+    gambar: "/gaya/anime-lembut.webp",
+    prompt: "anime lembut, mata besar, warna pastel, pencahayaan hangat",
+  },
+  {
+    id: "buku-cerita",
+    nama: "Buku cerita",
+    deskripsi: "Gaya cat air yang hangat",
+    gambar: "/gaya/buku-cerita.webp",
+    prompt: "ilustrasi buku cerita anak dengan cat air, tekstur kertas, warna hangat",
+  },
 ] as const;
 
 export const MAX_CERITA = 2000;

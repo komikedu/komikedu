@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Circle, Ellipse, Group, Image as KImage, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 import type Konva from "konva";
-import { Columns2, Copy, Rows2, Trash2 } from "lucide-react";
-import { MAX_PANELS_PER_PAGE } from "@/lib/editor/panel-ops";
+import { Columns2, Copy, Rows2, Shapes, Square, Trash2 } from "lucide-react";
+import { MAX_PANELS_PER_PAGE, panelCorners } from "@/lib/editor/panel-ops";
+import { snapPoint, snapRectMove, snapTargets, type Guides, type SnapTargets } from "@/lib/editor/snap";
 import { useEditor } from "@/lib/editor/store";
-import { PAGE_H, PAGE_W, type Bubble, type Panel } from "@/lib/editor/types";
+import { PAGE_H, PAGE_W, type Bubble, type Panel, type Point } from "@/lib/editor/types";
 
 const FIT_PADDING = 48;
 
@@ -26,6 +27,15 @@ function useImage(url: string | null) {
   return url ? img : null;
 }
 
+/** Potongan gambar agar memenuhi panel tanpa gepeng (seperti CSS object-fit: cover). */
+function coverCrop(img: HTMLImageElement, w: number, h: number) {
+  const ir = img.width / img.height;
+  const pr = w / h;
+  return ir > pr
+    ? { x: (img.width - img.height * pr) / 2, y: 0, width: img.height * pr, height: img.height }
+    : { x: 0, y: (img.height - img.width / pr) / 2, width: img.width, height: img.width / pr };
+}
+
 function PanelView({
   panel,
   index,
@@ -35,9 +45,17 @@ function PanelView({
   onTextTool,
   onDragState,
   trRef,
+  generating,
+  cornerMode,
+  snapTh,
+  onGuides,
 }: {
   panel: Panel;
   index: number;
+  generating: boolean;
+  cornerMode: boolean;
+  snapTh: number;
+  onGuides: (g: Guides | null) => void;
   selected: boolean;
   tool: "move" | "text";
   onSelect: () => void;
@@ -50,15 +68,28 @@ function PanelView({
   const setDrag = useEditor((s) => s.setDrag);
   const movePanel = useEditor((s) => s.movePanel);
   const resizePanel = useEditor((s) => s.resizePanel);
+  const targets = useRef<SnapTargets | null>(null);
 
   useEffect(() => {
-    if (selected && ref.current && trRef.current) {
+    if (selected && !cornerMode && ref.current && trRef.current) {
       trRef.current.nodes([ref.current]);
       trRef.current.getLayer()?.batchDraw();
     }
-  }, [selected, trRef, panel.w, panel.h, panel.x, panel.y]);
+  }, [selected, cornerMode, trRef, panel.w, panel.h, panel.x, panel.y]);
 
   if (!panel.visible) return null;
+  // titik-titik poligon relatif terhadap pojok kotak pembatas (posisi grup)
+  const lokal = panel.corners ? panel.corners.flatMap((c) => [c.x - panel.x, c.y - panel.y]) : null;
+  const clip = lokal
+    ? {
+        clipFunc: (ctx: Konva.Context) => {
+          ctx.beginPath();
+          ctx.moveTo(lokal[0], lokal[1]);
+          for (let i = 2; i < lokal.length; i += 2) ctx.lineTo(lokal[i], lokal[i + 1]);
+          ctx.closePath();
+        },
+      }
+    : { clipX: 0, clipY: 0, clipWidth: panel.w, clipHeight: panel.h };
   const klik = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => (tool === "text" ? onTextTool(e) : onSelect());
 
   return (
@@ -66,19 +97,38 @@ function PanelView({
       ref={ref}
       x={panel.x}
       y={panel.y}
-      clipX={0}
-      clipY={0}
-      clipWidth={panel.w}
-      clipHeight={panel.h}
+      {...clip}
       // panel baru bisa diseret setelah dipilih, supaya klik biasa tidak menggesernya tanpa sengaja
-      draggable={tool === "move" && selected}
+      draggable={tool === "move" && selected && !cornerMode}
       onClick={klik}
       onTap={klik}
-      onDragStart={() => onDragState(true)}
-      onDragMove={(e) => setDrag({ panelId: panel.id, dx: e.target.x() - panel.x, dy: e.target.y() - panel.y })}
+      onDragStart={() => {
+        onDragState(true);
+        const st = useEditor.getState();
+        const page = st.pages.find((p) => p.id === st.activePageId);
+        targets.current = page ? snapTargets(page, panel.id) : null;
+      }}
+      onDragMove={(e) => {
+        const node = e.target;
+        // tempelkan tepi panel ke garis terdekat (tepi panel lain, celah seragam, margin halaman)
+        if (targets.current) {
+          const snap = snapRectMove({ x: node.x(), y: node.y(), w: panel.w, h: panel.h }, targets.current, snapTh);
+          node.position({ x: node.x() + snap.dx, y: node.y() + snap.dy });
+          onGuides(snap.guides);
+        }
+        setDrag({ panelId: panel.id, dx: node.x() - panel.x, dy: node.y() - panel.y });
+      }}
       onDragEnd={(e) => {
         onDragState(false);
-        movePanel(panel.id, e.target.x() - panel.x, e.target.y() - panel.y);
+        onGuides(null);
+        let { x, y } = { x: e.target.x(), y: e.target.y() };
+        // posisi saat tombol dilepas juga ditempelkan (gerakan terakhir bisa saja belum masuk jarak tempel)
+        if (targets.current) {
+          const snap = snapRectMove({ x, y, w: panel.w, h: panel.h }, targets.current, snapTh);
+          x += snap.dx;
+          y += snap.dy;
+        }
+        movePanel(panel.id, x - panel.x, y - panel.y);
       }}
       onTransformEnd={() => {
         const node = ref.current;
@@ -90,22 +140,91 @@ function PanelView({
       }}
     >
       <Rect width={panel.w} height={panel.h} fill="#eef0f3" />
-      {img ? (
-        <KImage image={img} width={panel.w} height={panel.h} />
-      ) : (
-        <Text
-          width={panel.w}
-          height={panel.h}
-          align="center"
-          verticalAlign="middle"
-          fontSize={24}
-          fill="#9aa0aa"
-          text={`Panel ${index + 1}\nGambar belum dibuat`}
-          listening={false}
-        />
+      {img && <KImage image={img} width={panel.w} height={panel.h} crop={coverCrop(img, panel.w, panel.h)} />}
+      {(!img || generating) && (
+        <>
+          {img && <Rect width={panel.w} height={panel.h} fill="#ffffff" opacity={0.7} listening={false} />}
+          <Text
+            width={panel.w}
+            height={panel.h}
+            align="center"
+            verticalAlign="middle"
+            fontSize={24}
+            fill={generating ? "#0f766e" : "#9aa0aa"}
+            text={generating ? "Membuat gambar..." : `Panel ${index + 1}\nGambar belum dibuat`}
+            listening={false}
+          />
+        </>
       )}
-      <Rect width={panel.w} height={panel.h} stroke="#111" strokeWidth={6} listening={false} />
+      {lokal ? (
+        <Line points={lokal} closed stroke="#111" strokeWidth={6} lineJoin="miter" listening={false} />
+      ) : (
+        <Rect width={panel.w} height={panel.h} stroke="#111" strokeWidth={6} listening={false} />
+      )}
     </Group>
+  );
+}
+
+/** Titik sudut untuk memiringkan panel, dengan tempel ke garis panel lain dan sudut panel itu sendiri. */
+function CornerHandles({ panel, scale, snapTh, onGuides }: { panel: Panel; scale: number; snapTh: number; onGuides: (g: Guides | null) => void }) {
+  const setCorner = useEditor((s) => s.setCorner);
+  const [live, setLive] = useState<Point[] | null>(null);
+  const [versi, setVersi] = useState(0);
+  const targets = useRef<SnapTargets | null>(null);
+  const corners = live ?? panelCorners(panel);
+
+  return (
+    <>
+      <Line points={corners.flatMap((c) => [c.x, c.y])} closed stroke="#2563eb" strokeWidth={2 / scale} dash={[8 / scale, 5 / scale]} listening={false} />
+      {panelCorners(panel).map((c, i) => (
+        <Circle
+          key={`${i}-${versi}`}
+          x={c.x}
+          y={c.y}
+          radius={9 / scale}
+          fill="#fff"
+          stroke="#2563eb"
+          strokeWidth={2.5 / scale}
+          draggable
+          onMouseEnter={(e) => {
+            const stage = e.target.getStage();
+            if (stage) stage.container().style.cursor = "move";
+          }}
+          onMouseLeave={(e) => {
+            const stage = e.target.getStage();
+            if (stage) stage.container().style.cursor = "";
+          }}
+          onDragStart={() => {
+            const st = useEditor.getState();
+            const page = st.pages.find((p) => p.id === st.activePageId);
+            if (!page) return;
+            const t = snapTargets(page, panel.id);
+            // sudut lain di panel yang sama juga jadi acuan, agar sisi bisa dibuat tegak/datar lagi
+            panelCorners(panel).forEach((o, j) => {
+              if (j !== i) {
+                t.xs.push(o.x);
+                t.ys.push(o.y);
+              }
+            });
+            targets.current = t;
+          }}
+          onDragMove={(e) => {
+            const snap = targets.current ? snapPoint({ x: e.target.x(), y: e.target.y() }, targets.current, snapTh) : null;
+            const pt = snap?.pt ?? { x: e.target.x(), y: e.target.y() };
+            e.target.position(pt);
+            onGuides(snap?.guides ?? null);
+            setLive(panelCorners(panel).map((o, j) => (j === i ? pt : o)));
+          }}
+          onDragEnd={(e) => {
+            const akhir = { x: e.target.x(), y: e.target.y() };
+            setCorner(panel.id, i, targets.current ? snapPoint(akhir, targets.current, snapTh).pt : akhir);
+            setLive(null);
+            onGuides(null);
+            setVersi((v) => v + 1); // pasang ulang titik dari data (bentuk tidak valid ditolak dan kembali)
+          }}
+        />
+      ))}
+    </>
   );
 }
 
@@ -247,13 +366,14 @@ function BubbleView({
   );
 }
 
-export default function EditorCanvas({ fontFamily }: { fontFamily: string }) {
+export default function EditorCanvas({ fontFamily, generating = false }: { fontFamily: string; generating?: boolean }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const trRef = useRef<Konva.Transformer>(null);
   const panelTrRef = useRef<Konva.Transformer>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [, setFontTick] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const [guides, setGuides] = useState<Guides | null>(null);
 
   const page = useEditor((s) => s.pages.find((p) => p.id === s.activePageId));
   const selectedId = useEditor((s) => s.selectedId);
@@ -267,6 +387,9 @@ export default function EditorCanvas({ fontFamily }: { fontFamily: string }) {
   const deletePanel = useEditor((s) => s.deletePanel);
   const duplicateBubble = useEditor((s) => s.duplicateBubble);
   const deleteBubble = useEditor((s) => s.deleteBubble);
+  const cornerEdit = useEditor((s) => s.cornerEdit);
+  const setCornerEdit = useEditor((s) => s.setCornerEdit);
+  const resetCorners = useEditor((s) => s.resetCorners);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -288,8 +411,8 @@ export default function EditorCanvas({ fontFamily }: { fontFamily: string }) {
   // lepas Transformer milik jenis yang tidak sedang dipilih
   useEffect(() => {
     if (!selBubble) trRef.current?.nodes([]);
-    if (!selPanel) panelTrRef.current?.nodes([]);
-  }, [selBubble, selPanel]);
+    if (!selPanel || cornerEdit) panelTrRef.current?.nodes([]);
+  }, [selBubble, selPanel, cornerEdit]);
 
   if (!page) return null;
 
@@ -335,6 +458,10 @@ export default function EditorCanvas({ fontFamily }: { fontFamily: string }) {
               key={p.id}
               panel={p}
               index={i}
+              generating={generating}
+              cornerMode={cornerEdit === p.id}
+              snapTh={8 / scale}
+              onGuides={setGuides}
               selected={p.id === selectedId}
               tool={tool}
               onSelect={() => select(p.id)}
@@ -355,6 +482,13 @@ export default function EditorCanvas({ fontFamily }: { fontFamily: string }) {
               onDragState={setDragging}
               trRef={trRef}
             />
+          ))}
+          {selPanel && cornerEdit === selPanel.id && <CornerHandles panel={selPanel} scale={scale} snapTh={8 / scale} onGuides={setGuides} />}
+          {guides?.x.map((x) => (
+            <Line key={`gx-${x}`} points={[x, 0, x, PAGE_H]} stroke="#db2777" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} listening={false} />
+          ))}
+          {guides?.y.map((y) => (
+            <Line key={`gy-${y}`} points={[0, y, PAGE_W, y]} stroke="#db2777" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} listening={false} />
           ))}
           <Transformer
             ref={panelTrRef}
@@ -405,6 +539,21 @@ export default function EditorCanvas({ fontFamily }: { fontFamily: string }) {
               >
                 <Rows2 size={17} />
               </button>
+              <button
+                type="button"
+                title={cornerEdit === selPanel.id ? "Selesai memiringkan" : "Miringkan sudut panel"}
+                aria-label="Miringkan sudut panel"
+                aria-pressed={cornerEdit === selPanel.id}
+                onClick={() => setCornerEdit(cornerEdit === selPanel.id ? null : selPanel.id)}
+                className={`${tbBtn} ${cornerEdit === selPanel.id ? "bg-blue-100 text-blue-700" : ""}`}
+              >
+                <Shapes size={17} />
+              </button>
+              {selPanel.corners && (
+                <button type="button" title="Kembalikan jadi kotak" aria-label="Kembalikan panel jadi kotak" onClick={() => resetCorners(selPanel.id)} className={tbBtn}>
+                  <Square size={17} />
+                </button>
+              )}
               <button
                 type="button"
                 title="Duplikat panel"

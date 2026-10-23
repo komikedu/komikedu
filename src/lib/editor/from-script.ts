@@ -18,7 +18,7 @@ function bubbleHeight(text: string, width: number, fontSize: number) {
 }
 
 /** Tata letak balon otomatis di dalam panel: bersusun dari atas, selang-seling kiri dan kanan. */
-function layoutBubbles(panel: Panel, dialog: ScriptPanel["dialog"]): Bubble[] {
+export function layoutBubbles(panel: Panel, dialog: ScriptPanel["dialog"]): Bubble[] {
   const bubbles: Bubble[] = [];
   let y = panel.y + MARGIN;
   dialog.forEach((d, i) => {

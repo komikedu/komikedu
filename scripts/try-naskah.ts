@@ -50,7 +50,7 @@ async function main() {
 
     const { data } = await admin
       .from("pages")
-      .select("id, urutan, template_layout, panels(id, urutan, script_json, image_url, posisi, tampil, bubbles(id, jenis, teks, posisi, ukuran, ekor, font_size, tampil, urutan))")
+      .select("id, urutan, template_layout, panels(id, urutan, script_json, image_url, posisi, tampil, adegan, bubbles(id, jenis, teks, posisi, ukuran, ekor, font_size, tampil, urutan))")
       .eq("comic_id", comicId)
       .order("urutan");
     const back = fromNested(data as unknown as NestedPage[]);

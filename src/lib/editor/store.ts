@@ -2,8 +2,9 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { temporal } from "zundo";
 import { createBubble, createPage } from "./factory";
-import { deletePanel, duplicateBubble, duplicatePanel, movePanel, resizePanel, splitPanel, type SplitArah } from "./panel-ops";
-import type { Bubble, BubbleKind, EditorPage, Panel } from "./types";
+import { layoutBubbles } from "./from-script";
+import { deletePanel, duplicateBubble, duplicatePanel, movePanel, resetCorners, resizePanel, setCorner, splitPanel, type SplitArah } from "./panel-ops";
+import type { Bubble, BubbleKind, EditorPage, Panel, Point } from "./types";
 
 type Tool = "move" | "text";
 
@@ -15,6 +16,8 @@ type EditorState = {
   zoom: number;
   /** Pergeseran sementara saat panel diseret (agar balonnya ikut terlihat bergerak); tidak masuk riwayat. */
   drag: { panelId: string; dx: number; dy: number } | null;
+  /** Panel yang sedang diubah sudutnya (mode miring); tidak masuk riwayat. */
+  cornerEdit: string | null;
 
   init: (pages: EditorPage[]) => void;
   setActivePage: (id: string) => void;
@@ -27,12 +30,17 @@ type EditorState = {
   deleteBubble: (id: string) => void;
   duplicateBubble: (id: string) => void;
   setDrag: (drag: EditorState["drag"]) => void;
+  setCornerEdit: (panelId: string | null) => void;
+  setCorner: (panelId: string, index: number, pt: Point) => void;
+  resetCorners: (panelId: string) => void;
   movePanel: (id: string, dx: number, dy: number) => void;
   resizePanel: (id: string, rect: { x: number; y: number; w: number; h: number }) => void;
   splitPanel: (id: string, arah: SplitArah) => void;
   duplicatePanel: (id: string) => void;
   deletePanel: (id: string) => void;
-  updatePanel: (id: string, patch: Partial<Pick<Panel, "visible">>) => void;
+  updatePanel: (id: string, patch: Partial<Pick<Panel, "visible" | "adegan">>) => void;
+  /** Isi panel yang adegannya kosong dengan hasil AI (adegan + balon dialog), sebagai satu langkah riwayat. */
+  isiPanelKosong: (pageId: string, hasil: { id: string; adegan: string; dialog: { karakter: string; jenis: Bubble["kind"]; teks: string }[] }[]) => void;
 };
 
 export const useEditor = create<EditorState>()(
@@ -44,6 +52,7 @@ export const useEditor = create<EditorState>()(
       tool: "move",
       zoom: 1,
       drag: null,
+      cornerEdit: null,
 
       init: (pages) =>
         set((s) => {
@@ -59,6 +68,7 @@ export const useEditor = create<EditorState>()(
       select: (id) =>
         set((s) => {
           s.selectedId = id;
+          if (s.cornerEdit !== id) s.cornerEdit = null;
         }),
       setTool: (tool) =>
         set((s) => {
@@ -113,6 +123,23 @@ export const useEditor = create<EditorState>()(
           s.drag = drag;
         }),
 
+      setCornerEdit: (panelId) =>
+        set((s) => {
+          s.cornerEdit = panelId;
+        }),
+
+      setCorner: (panelId, index, pt) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (page) setCorner(page, panelId, index, pt);
+        }),
+
+      resetCorners: (panelId) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === s.activePageId);
+          if (page) resetCorners(page, panelId);
+        }),
+
       movePanel: (id, dx, dy) =>
         set((s) => {
           const page = s.pages.find((p) => p.id === s.activePageId);
@@ -145,6 +172,18 @@ export const useEditor = create<EditorState>()(
           if (page && deletePanel(page, id) && s.selectedId === id) s.selectedId = null;
         }),
 
+      isiPanelKosong: (pageId, hasil) =>
+        set((s) => {
+          const page = s.pages.find((p) => p.id === pageId);
+          if (!page) return;
+          for (const h of hasil) {
+            const panel = page.panels.find((p) => p.id === h.id);
+            if (!panel || panel.adegan.trim()) continue; // panel yang sudah berisi tidak ditimpa
+            panel.adegan = h.adegan;
+            page.bubbles.push(...layoutBubbles({ ...panel }, h.dialog));
+          }
+        }),
+
       updatePanel: (id, patch) =>
         set((s) => {
           for (const page of s.pages) {
@@ -162,6 +201,23 @@ export const useEditor = create<EditorState>()(
     },
   ),
 );
+
+/**
+ * Pasang URL gambar hasil generate ke panel. Gambar ditulis server, jadi tidak boleh hilang saat undo:
+ * perubahan tidak dicatat sebagai langkah baru, dan semua snapshot riwayat ikut diperbarui.
+ */
+export function applyPanelImages(images: Record<string, string>) {
+  const patch = (pages: EditorPage[]) =>
+    pages.map((pg) => (pg.panels.some((p) => images[p.id]) ? { ...pg, panels: pg.panels.map((p) => (images[p.id] ? { ...p, imageUrl: images[p.id] } : p)) } : pg));
+  const t = useEditor.temporal.getState();
+  t.pause();
+  useEditor.setState((s) => ({ pages: patch(s.pages) }));
+  t.resume();
+  useEditor.temporal.setState({
+    pastStates: t.pastStates.map((st) => (st.pages ? { ...st, pages: patch(st.pages) } : st)),
+    futureStates: t.futureStates.map((st) => (st.pages ? { ...st, pages: patch(st.pages) } : st)),
+  });
+}
 
 export const undo = () => useEditor.temporal.getState().undo();
 export const redo = () => useEditor.temporal.getState().redo();

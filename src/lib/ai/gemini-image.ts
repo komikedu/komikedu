@@ -1,44 +1,14 @@
 import "server-only";
 import { GoogleGenAI } from "@google/genai";
-import { getLayout, type Rect } from "./layouts";
 import type { ImageProvider, PageImageRequest, PageImageResult } from "./image-provider";
+import { buildPagePrompt } from "./page-prompt";
+
+export { buildPagePrompt };
 
 export const IMAGE_MODEL = "gemini-3.1-flash-image"; // Nano Banana 2
 export const IMAGE_MODEL_PREMIUM = "gemini-3-pro-image"; // Nano Banana Pro
 
 const RETRYABLE = new Set([500, 503]); // 429 pada gambar = kuota habis, bukan sementara
-
-const pct = (n: number) => `${Math.round(n * 100)}%`;
-const describeRect = (r: Rect) =>
-  `kiri ${pct(r.x)}, atas ${pct(r.y)}, lebar ${pct(r.w)}, tinggi ${pct(r.h)} dari halaman`;
-
-export function buildPagePrompt(req: PageImageRequest): string {
-  const layout = getLayout(req.layoutId);
-  if (layout.panels.length !== req.panels.length) {
-    throw new Error(`Template ${layout.id} butuh ${layout.panels.length} panel, diberi ${req.panels.length}`);
-  }
-  const panels = req.panels
-    .map(
-      (p, i) =>
-        `Panel ${i + 1} (${describeRect(layout.panels[i])}): ${p.adegan}` +
-        (p.karakter.length ? ` Karakter: ${p.karakter.join(", ")}.` : ""),
-    )
-    .join("\n");
-  const chars = req.karakter.map((k) => `- ${k.nama}: ${k.deskripsi}`).join("\n");
-
-  return [
-    `Gambar SATU halaman komik edukasi vertikal (rasio 3:4) untuk anak SD, gaya ${req.gaya}.`,
-    `Tata letak: ${layout.nama}, ${layout.panels.length} panel dipisahkan garis bingkai putih tipis.`,
-    panels,
-    chars ? `Karakter harus tampil konsisten (wajah, rambut, pakaian sama di semua panel):\n${chars}` : "",
-    req.referenceImages?.length ? "Ikuti desain karakter pada gambar referensi yang dilampirkan." : "",
-    "ATURAN KERAS: jangan gambar teks, huruf, angka, balon kata, tanda air, atau logo apa pun. " +
-      "Isi seluruh area setiap panel dengan gambar adegan; jangan ada kotak, balon, atau area putih kosong di dalam panel. " +
-      "Konten ramah anak, tanpa kekerasan.",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
 
 export class GeminiImageProvider implements ImageProvider {
   readonly name = "gemini";

@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { getLayout, type Rect } from "./layouts";
+import type { Rect } from "./layouts";
 
 export type CroppedPanel = { urutan: number; image: Buffer; width: number; height: number };
 
@@ -63,28 +63,55 @@ export async function detectPanels(page: Uint8Array, expected: number): Promise<
   return rects.sort((a, b) => (Math.abs(a.y - b.y) < 0.05 ? a.x - b.x : a.y - b.y));
 }
 
-/** Potong gambar halaman menjadi gambar per panel, keluaran WebP. */
-export async function cropPanels(
-  page: Uint8Array,
-  layoutId: string,
-  opts: { quality?: number } = {},
-): Promise<CroppedPanel[]> {
+const iou = (a: Rect, b: Rect) => {
+  const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+  const iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  const inter = ix * iy;
+  return inter / (a.w * a.h + b.w * b.h - inter || 1);
+};
+
+/**
+ * Pasangkan panel hasil deteksi dengan kotak yang diharapkan berdasarkan tumpang-tindih terbesar.
+ * Model gambar tidak menaruh panel persis di posisi yang diminta, tapi posisinya berdekatan.
+ * Kotak tanpa pasangan yang cukup mirip memakai posisi yang diharapkan sebagai cadangan.
+ */
+export function matchPanels(expected: Rect[], detected: Rect[] | null): { rect: Rect; terdeteksi: boolean }[] {
+  const used = new Set<number>();
+  return expected.map((e) => {
+    let best = -1;
+    let bestScore = 0.15;
+    detected?.forEach((d, i) => {
+      const score = iou(e, d);
+      if (!used.has(i) && score > bestScore) {
+        best = i;
+        bestScore = score;
+      }
+    });
+    if (best < 0 || !detected) return { rect: e, terdeteksi: false };
+    used.add(best);
+    return { rect: detected[best], terdeteksi: true };
+  });
+}
+
+/**
+ * Potong gambar halaman menjadi gambar per panel (WebP), dalam urutan yang sama dengan `rects`
+ * (kotak panel editor, ternormalisasi 0-1).
+ */
+export async function cropPanels(page: Uint8Array, rects: Rect[], opts: { quality?: number } = {}): Promise<CroppedPanel[]> {
   const { quality = 85 } = opts;
-  const layout = getLayout(layoutId);
   const { width = 0, height = 0 } = await sharp(page).metadata();
   if (!width || !height) throw new Error("Gambar halaman tidak valid");
 
-  const detected = await detectPanels(page, layout.panels.length);
-  const rects = detected ?? layout.panels;
-  // deteksi menyertakan garis bingkai, jadi masuk sedikit agar garis tidak ikut
-  const inset = detected ? Math.max(4, Math.round(width * 0.012)) : Math.round(width * 0.004);
+  const matched = matchPanels(rects, await detectPanels(page, rects.length));
 
   return Promise.all(
-    rects.map(async (r, i) => {
-      const left = Math.round(r.x * width) + inset;
-      const top = Math.round(r.y * height) + inset;
-      const w = Math.min(Math.round(r.w * width) - 2 * inset, width - left);
-      const h = Math.min(Math.round(r.h * height) - 2 * inset, height - top);
+    matched.map(async ({ rect: r, terdeteksi }, i) => {
+      // deteksi menyertakan garis bingkai, jadi masuk sedikit agar garis tidak ikut
+      const inset = terdeteksi ? Math.max(4, Math.round(width * 0.012)) : Math.round(width * 0.004);
+      const left = Math.max(0, Math.round(r.x * width) + inset);
+      const top = Math.max(0, Math.round(r.y * height) + inset);
+      const w = Math.max(1, Math.min(Math.round(r.w * width) - 2 * inset, width - left));
+      const h = Math.max(1, Math.min(Math.round(r.h * height) - 2 * inset, height - top));
       const image = await sharp(page).extract({ left, top, width: w, height: h }).webp({ quality }).toBuffer();
       return { urutan: i + 1, image, width: w, height: h };
     }),

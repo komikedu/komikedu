@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { extractText, getDocumentProxy } from "unpdf";
 import { z } from "zod";
 import { hapusFolderKomik } from "@/lib/storage/gambar";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient, penggunaTerlindungi } from "@/lib/supabase/server";
 import { DraftPatchSchema, MAX_PDF_BYTES, MAX_PDF_PAGES, type DraftPatch } from "@/lib/comics/schema";
 
 const MAX_TEXT_CHARS = 200_000;
@@ -18,8 +18,20 @@ async function requireUser() {
   return { supabase, user };
 }
 
+/**
+ * Untuk aksi yang hanya menulis lewat klien pengguna (RLS): basis data sendiri memeriksa tanda tangan token dan menegakkan
+ * user_id = auth.uid(), jadi id pengguna cukup dibaca lokal dari token tanpa panggilan ke server Auth (ratusan milidetik).
+ * Jangan dipakai bila aksinya memakai id ini untuk klien service role atau keputusan lain di luar RLS.
+ */
+async function requireUserCepat() {
+  const supabase = await createClient();
+  const user = await penggunaTerlindungi(supabase);
+  if (!user) redirect("/login");
+  return { supabase, user };
+}
+
 export async function createDraft() {
-  const { supabase, user } = await requireUser();
+  const { supabase, user } = await requireUserCepat();
   const { data, error } = await supabase
     .from("comics")
     .insert({ user_id: user.id })
@@ -30,7 +42,7 @@ export async function createDraft() {
 }
 
 export async function saveDraft(id: string, patch: DraftPatch): Promise<{ ok: boolean }> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireUserCepat();
   const parsed = DraftPatchSchema.safeParse(patch);
   if (!parsed.success) return { ok: false };
   // RLS memastikan hanya pemilik yang bisa mengubah; filter status mencegah mengubah komik yang sudah diproses

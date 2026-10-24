@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { verifikasiTokenHS256 } from "./jwt";
 
 const PROTECTED = ["/dashboard", "/comics"];
 
@@ -31,15 +32,27 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
-  // getUser memvalidasi token ke server Auth (bukan sekadar membaca cookie): dipakai untuk rute yang dilindungi
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const keLogin = () => {
     const login = request.nextUrl.clone();
     login.pathname = "/login";
     login.search = `?next=${encodeURIComponent(pathname)}`;
     return NextResponse.redirect(login);
-  }
-  return response;
+  };
+
+  // Rute yang dilindungi. getSession membaca cookie (dan menyegarkan token yang sudah kedaluwarsa). Tanda tangan dan masa
+  // berlaku token lalu diperiksa lokal dengan rahasia JWT proyek, tanpa panggilan ke server Auth: satu panggilan itu memakan
+  // ratusan milidetik di setiap perpindahan halaman, termasuk prefetch tautan. Jaminannya sama dengan yang ditegakkan basis
+  // data terhadap token yang sama. Tanpa rahasia (mis. pengembangan lokal) atau bila pemeriksaan gagal, jatuh ke getUser.
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) return keLogin();
+  const rahasia = process.env.SUPABASE_JWT_SECRET;
+  if (rahasia && (await verifikasiTokenHS256(session.access_token, rahasia))) return response;
+
+  // getUser memvalidasi token ke server Auth (bukan sekadar membaca cookie)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user ? response : keLogin();
 }

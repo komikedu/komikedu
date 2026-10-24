@@ -11,6 +11,7 @@ export const ENV_WAJIB = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON
 
 /** Variabel pendukung: tanpa ini fitur tertentu mati (admin, pembuat gambar, penyimpanan R2). */
 export const ENV_PENDUKUNG = [
+  "SUPABASE_JWT_SECRET",
   "ADMIN_EMAILS",
   "IMAGE_PROVIDER",
   "GEMINI_API_KEY",

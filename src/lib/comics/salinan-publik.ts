@@ -1,6 +1,5 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import sharp from "sharp";
 import { z } from "zod";
 import { UKURAN_BAWAAN, type UkuranHalaman } from "@/lib/editor/types";
 import { ukuranDariBaris } from "@/lib/editor/ukuran-halaman";
@@ -48,6 +47,9 @@ export async function simpanHalamanRilis(
   if (bytes.length === 0 || bytes.length > MAX_BYTES_HALAMAN) return { ok: false, error: "Ukuran gambar halaman maksimal 3 MB", status: 413 };
   const { data: komik } = await supabase.from("comics").select("id, user_id, lebar_halaman, tinggi_halaman").eq("id", comicId).maybeSingle();
   if (!komik || komik.user_id !== userId) return { ok: false, error: "Komik tidak ditemukan", status: 404 };
+  // sharp dimuat saat dibutuhkan: modul ini ikut diimpor halaman publik (komunitas, baca) yang tidak memakainya, dan gagal
+  // memuat sharp tidak boleh membuat halaman-halaman itu error
+  const { default: sharp } = await import("sharp");
   const galat = galatHalamanJpeg(await sharp(bytes).metadata().catch(() => null), ukuranDariBaris(komik));
   if (galat) return { ok: false, error: galat, status: 400 };
   try {

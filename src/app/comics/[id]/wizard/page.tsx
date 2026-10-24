@@ -4,7 +4,7 @@ import { BAHASA_IDS, TEMA_IDS } from "@/lib/comics/klasifikasi";
 import { WIZARD_STEPS } from "@/lib/comics/schema";
 import type { Tokoh } from "@/lib/comics/tokoh";
 import { ukuranDariBaris } from "@/lib/editor/ukuran-halaman";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, penggunaTerlindungi } from "@/lib/supabase/server";
 import { WizardForm } from "./wizard-form";
 
 // tombol "Buat naskah" di langkah terakhir memanggil AI (30-60 detik)
@@ -20,24 +20,22 @@ export default async function WizardPage({
   const { id } = await params;
   const { langkah } = await searchParams;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await penggunaTerlindungi(supabase);
   if (!user) redirect(`/login?next=/comics/${id}/wizard`);
 
-  const { data: comic } = await supabase
-    .from("comics")
-    .select("id, user_id, judul, topik, jenjang, tujuan, cerita, tokoh_json, jumlah_halaman, halaman_otomatis, panel_per_halaman, panel_per_halaman_maks, dengan_sampul, sumber, tema, bahasa, gaya, lebar_halaman, tinggi_halaman, wizard_step, status, naskah_status, naskah_error")
-    .eq("id", id)
-    .maybeSingle();
-  if (!comic || comic.user_id !== user.id) notFound();
-  if (comic.status !== "draft") redirect("/dashboard");
-
-  const [{ data: materi }, { data: profil }, { data: komikLain }] = await Promise.all([
+  // semua query berjalan bersamaan: tiap permintaan ke Supabase memakan ratusan milidetik, jadi berurutan terasa lambat
+  const [{ data: comic }, { data: materi }, { data: profil }, { data: komikLain }] = await Promise.all([
+    supabase
+      .from("comics")
+      .select("id, user_id, judul, topik, jenjang, tujuan, cerita, tokoh_json, jumlah_halaman, halaman_otomatis, panel_per_halaman, panel_per_halaman_maks, dengan_sampul, sumber, tema, bahasa, gaya, lebar_halaman, tinggi_halaman, wizard_step, status, naskah_status, naskah_error")
+      .eq("id", id)
+      .maybeSingle(),
     supabase.from("source_materials").select("file_url, teks_ekstraksi").eq("comic_id", id).maybeSingle(),
     supabase.from("users").select("saldo_kredit").eq("id", user.id).single(),
     supabase.from("comics").select("id, judul, tokoh_json").eq("user_id", user.id).neq("id", id).order("updated_at", { ascending: false }).limit(20),
   ]);
+  if (!comic || comic.user_id !== user.id) notFound();
+  if (comic.status !== "draft") redirect("/dashboard");
 
   // ?langkah=6 membuka langsung langkah cerita (mis. dari dashboard atau setelah naskah gagal)
   const ukuran = ukuranDariBaris(comic);

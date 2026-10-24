@@ -37,7 +37,9 @@ export type KartuKomunitas = KomikPublik & { sampul: string | null };
  * berstatus terbit yang pernah dikembalikan, dan yang dibaca publik hanya salinan tetap (`halaman_publik`),
  * bukan isi editor.
  */
-const KOLOM_PUBLIK = "id, judul, jenjang, deskripsi_publik, diterbitkan_at, user_id, halaman_publik, lebar_halaman, tinggi_halaman";
+// users(nama): nama penulis ikut diambil dalam satu permintaan (relasi comics.user_id -> users); satu permintaan ke Supabase
+// memakan ratusan milidetik, jadi query kedua untuk nama penulis terasa sebagai jeda di halaman
+const KOLOM_PUBLIK = "id, judul, jenjang, deskripsi_publik, diterbitkan_at, user_id, halaman_publik, lebar_halaman, tinggi_halaman, users(nama)";
 
 type BarisKomik = {
   id: string;
@@ -49,21 +51,22 @@ type BarisKomik = {
   halaman_publik: string[] | null;
   lebar_halaman?: number | null;
   tinggi_halaman?: number | null;
+  /** hasil embed relasi; objek tunggal (to-one), bisa null bila baris pengguna tidak ada */
+  users?: { nama: string | null } | { nama: string | null }[] | null;
 };
 
-async function namaPenulis(admin: SupabaseClient, ids: string[]): Promise<Map<string, string>> {
-  if (!ids.length) return new Map();
-  const { data } = await admin.from("users").select("id, nama").in("id", [...new Set(ids)]);
-  return new Map((data ?? []).map((u) => [u.id as string, ((u.nama as string | null) ?? "").trim()]));
-}
+const namaDari = (r: BarisKomik): string => {
+  const u = Array.isArray(r.users) ? r.users[0] : r.users;
+  return (u?.nama ?? "").trim();
+};
 
-const keKomik = (r: BarisKomik, penulis: Map<string, string>): KomikPublik => ({
+const keKomik = (r: BarisKomik): KomikPublik => ({
   id: r.id,
   judul: r.judul,
   jenjang: r.jenjang,
   deskripsi: r.deskripsi_publik ?? "",
   diterbitkan: r.diterbitkan_at ?? "",
-  penulis: penulis.get(r.user_id) || "Guru KomikEdu",
+  penulis: namaDari(r) || "Guru KomikEdu",
 });
 
 /** Hanya URL milik komik ini yang dianggap halaman salinan (kolom ini ditulis server, tetapi tetap diperiksa). */
@@ -82,8 +85,7 @@ export async function daftarTerbit(admin: SupabaseClient, halaman: number, filte
   const baris = (data ?? []) as unknown as BarisKomik[];
   const adaLagi = baris.length > PER_HALAMAN_KOMUNITAS;
   const tampil = baris.slice(0, PER_HALAMAN_KOMUNITAS);
-  const penulis = await namaPenulis(admin, tampil.map((r) => r.user_id));
-  return { ok: true, adaLagi, komik: tampil.map((r) => ({ ...keKomik(r, penulis), sampul: halamanSah(r)[0] ?? null })) };
+  return { ok: true, adaLagi, komik: tampil.map((r) => ({ ...keKomik(r), sampul: halamanSah(r)[0] ?? null })) };
 }
 
 /** Satu komik terbit beserta URL gambar halamannya (salinan tetap). null bila tidak ada, sudah ditarik, atau tanpa salinan. */
@@ -93,8 +95,7 @@ export async function bacaKomikPublik(admin: SupabaseClient, id: string): Promis
   const baris = data as unknown as BarisKomik;
   const halaman = halamanSah(baris);
   if (!halaman.length) return null;
-  const penulis = await namaPenulis(admin, [baris.user_id]);
-  return { komik: { ...keKomik(baris, penulis), ukuran: ukuranDariBaris(baris) }, halaman };
+  return { komik: { ...keKomik(baris), ukuran: ukuranDariBaris(baris) }, halaman };
 }
 
 /** Status terbit komik milik pengguna (untuk dialog Terbitkan di editor). */

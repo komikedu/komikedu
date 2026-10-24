@@ -83,6 +83,21 @@ export async function periksaDatabase(admin: Klien): Promise<HasilPeriksa[]> {
   const koneksi = await admin.from("comics").select("id", { count: "exact", head: true });
   const hasil: HasilPeriksa[] = [{ nama: "Koneksi database (service role)", ok: !koneksi.error, detail: koneksi.error?.message ?? "tersambung" }];
   if (koneksi.error) return hasil;
+
+  // waktu satu permintaan dari server ini ke Supabase: penyebab utama halaman terasa lambat bila tiap halaman memanggilnya berurutan
+  const waktu: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = performance.now();
+    await admin.from("comics").select("id", { head: true });
+    waktu.push(Math.round(performance.now() - t0));
+  }
+  const rata = Math.round(waktu.reduce((a, b) => a + b, 0) / waktu.length);
+  hasil.push({
+    nama: "Waktu satu permintaan ke database",
+    ok: rata < 400,
+    detail: `${rata} ms rata-rata (${waktu.join(", ")} ms)${rata >= 400 ? ": lambat; periksa jarak wilayah fungsi server dengan wilayah database, dan kurangi permintaan berurutan per halaman" : ""}`,
+  });
+
   const kolom = await Promise.all(KOLOM_COMICS.map(async (k) => ({ k, error: (await admin.from("comics").select(k, { head: true })).error })));
   const hilang = kolom.filter((c) => c.error).map((c) => c.k);
   hasil.push({

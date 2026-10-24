@@ -20,13 +20,22 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // getUser memvalidasi token ke server Auth (bukan sekadar membaca cookie)
+  const { pathname } = request.nextUrl;
+  const dilindungi = PROTECTED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
+  if (!dilindungi) {
+    // Rute publik tidak butuh pengesahan ke server Auth (satu panggilan ke Supabase memakan ratusan milidetik di setiap
+    // perpindahan halaman). getSession hanya membaca cookie dan menyegarkan token yang sudah kedaluwarsa, supaya sesi
+    // tetap hidup; tidak ada keputusan akses yang bergantung padanya.
+    await supabase.auth.getSession();
+    return response;
+  }
+
+  // getUser memvalidasi token ke server Auth (bukan sekadar membaca cookie): dipakai untuk rute yang dilindungi
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const { pathname } = request.nextUrl;
-  if (!user && PROTECTED.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+  if (!user) {
     const login = request.nextUrl.clone();
     login.pathname = "/login";
     login.search = `?next=${encodeURIComponent(pathname)}`;

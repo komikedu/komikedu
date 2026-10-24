@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { TAG_KOMUNITAS } from "@/lib/comics/komunitas-cache";
 import { bacaTambahKredit, isAdminEmail } from "@/lib/admin";
 import { tambahKredit } from "@/lib/admin-kredit";
 import { tarikOlehAdmin, tutupLaporan } from "@/lib/comics/komunitas";
@@ -55,6 +56,7 @@ export async function tarikKomikDilaporkan(form: FormData): Promise<void> {
   if (!(await tarikOlehAdmin(createAdminClient(), id))) throw new Error("Gagal menarik komik");
   revalidatePath("/admin");
   revalidatePath("/komunitas");
+  revalidateTag(TAG_KOMUNITAS);
   revalidatePath(`/baca/${id}`);
 }
 

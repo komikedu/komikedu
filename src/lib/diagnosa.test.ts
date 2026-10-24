@@ -73,15 +73,27 @@ describe("periksaDatabase", () => {
   });
   it("menyebut semua kolom yang hilang, bukan hanya yang pertama", async () => {
     const h = await periksaDatabase(klien((k) => (k === "tema" || k === "lebar_halaman" ? `column comics.${k} does not exist` : null)));
+    const kolom = h.find((x) => x.nama === "Kolom tabel comics")!;
     expect(h[0].ok).toBe(true);
-    expect(h[1]).toMatchObject({ ok: false });
-    expect(h[1].detail).toContain("lebar_halaman");
-    expect(h[1].detail).toContain("tema");
-    expect(h[1].detail).not.toContain("judul");
+    expect(kolom).toMatchObject({ ok: false });
+    expect(kolom.detail).toContain("lebar_halaman");
+    expect(kolom.detail).toContain("tema");
+    expect(kolom.detail).not.toContain("judul");
   });
   it("semua lengkap", async () => {
     const h = await periksaDatabase(klien(() => null));
     expect(h.every((x) => x.ok)).toBe(true);
-    expect(h[1].detail).toContain(String(KOLOM_COMICS.length));
+    expect(h.find((x) => x.nama === "Kolom tabel comics")!.detail).toContain(String(KOLOM_COMICS.length));
   });
+  it("melaporkan waktu satu permintaan dan menandai yang lambat", async () => {
+    const lambat = {
+      from: () => ({ select: () => new Promise((ok) => setTimeout(() => ok({ error: null }), 420)) }),
+    } as never;
+    const h = await periksaDatabase(lambat);
+    const waktu = h.find((x) => x.nama === "Waktu satu permintaan ke database")!;
+    expect(waktu.ok).toBe(false);
+    expect(waktu.detail).toMatch(/lambat/);
+    const cepat = await periksaDatabase(klien(() => null));
+    expect(cepat.find((x) => x.nama === "Waktu satu permintaan ke database")).toMatchObject({ ok: true });
+  }, 15000);
 });

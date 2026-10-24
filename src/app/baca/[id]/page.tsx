@@ -3,10 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft, Download } from "lucide-react";
 import { PublicHeader } from "@/components/public-header";
-import { bacaKomikPublik } from "@/lib/comics/komunitas";
+import { bacaKomikPublikTersimpan } from "@/lib/comics/komunitas-cache";
 import { waktuRelatif } from "@/lib/comics/status";
 import { ukuranRender } from "@/lib/editor/ukuran-halaman";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { LaporDialog } from "./lapor-dialog";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   if (!UUID.test(id)) return { title: "Komik tidak ditemukan" };
-  const data = await bacaKomikPublik(createAdminClient(), id);
+  const data = await bacaKomikPublikTersimpan(id);
   if (!data) return { title: "Komik tidak ditemukan" };
   const { komik } = data;
   return {
@@ -29,14 +29,15 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function BacaPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID.test(id)) notFound();
-  const data = await bacaKomikPublik(createAdminClient(), id);
+  const data = await bacaKomikPublikTersimpan(id);
   if (!data) notFound();
   const { komik, halaman } = data;
 
+  // hanya untuk menampilkan tombol Laporkan menurut status masuk; pelaporannya sendiri disahkan ulang di server
   const supabase = await createClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
   return (
     <div className="min-h-screen bg-surface-muted">
@@ -61,7 +62,7 @@ export default async function BacaPage({ params }: { params: Promise<{ id: strin
             >
               <Download size={13} /> Unduh PDF
             </a>
-            <LaporDialog comicId={komik.id} masuk={!!user} />
+            <LaporDialog comicId={komik.id} masuk={!!session} />
           </div>
         </div>
         {komik.deskripsi && <p className="mt-3 whitespace-pre-line text-sm text-gray-700">{komik.deskripsi}</p>}

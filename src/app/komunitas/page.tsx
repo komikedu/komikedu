@@ -2,11 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PublicHeader } from "@/components/public-header";
-import { daftarTerbit } from "@/lib/comics/komunitas";
+import { daftarTerbitTersimpan } from "@/lib/comics/komunitas-cache";
 import { adaFilter, bacaFilter, urlKomunitas } from "@/lib/comics/klasifikasi";
 import { nomorHalaman } from "@/lib/comics/komunitas-schema";
 import { waktuRelatif } from "@/lib/comics/status";
-import { createAdminClient } from "@/lib/supabase/server";
 import { FilterKomunitasForm } from "./filter-komunitas";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +19,7 @@ export default async function KomunitasPage({ searchParams }: { searchParams: Pr
   const query = await searchParams;
   const halaman = nomorHalaman(query.halaman);
   const filter = bacaFilter(query);
-  const res = await daftarTerbit(createAdminClient(), halaman, filter);
+  const res = await daftarTerbitTersimpan(halaman, filter);
   const now = new Date();
 
   return (

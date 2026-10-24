@@ -5,9 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 /** Bar atas untuk halaman publik (komunitas dan baca): bisa dibuka tanpa login; tombol kanan menyesuaikan status masuk. */
 export async function PublicHeader({ aktif }: { aktif?: "komunitas" }) {
   const supabase = await createClient();
+  // hanya menentukan tombol kanan (Dashboard atau Masuk): membaca cookie tanpa panggilan jaringan ke server Auth
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session ? true : null;
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-surface/90 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">

@@ -4,15 +4,13 @@ import type { ComicSummary } from "@/lib/comics/status";
 import { halamanThumb } from "@/lib/comics/thumb";
 import { ukuranDariBaris } from "@/lib/editor/ukuran-halaman";
 import { isAdminEmail } from "@/lib/admin";
-import { daftarTerbit } from "@/lib/comics/komunitas";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { daftarTerbitTersimpan } from "@/lib/comics/komunitas-cache";
+import { createClient, penggunaTerlindungi } from "@/lib/supabase/server";
 import { DashboardView } from "./dashboard-view";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await penggunaTerlindungi(supabase);
   if (!user) redirect("/login?next=/dashboard");
 
   const [{ data: profil }, { data: rows }, terbit] = await Promise.all([
@@ -26,7 +24,7 @@ export default async function DashboardPage() {
       .order("urutan", { referencedTable: "pages", ascending: true })
       .limit(1, { referencedTable: "pages" }),
     // komik terbaru di komunitas untuk satu baris di beranda; gagal memuat tidak menghalangi beranda
-    daftarTerbit(createAdminClient(), 1).catch(() => null),
+    daftarTerbitTersimpan(1).catch(() => null),
   ]);
 
   const comics: ComicSummary[] = (rows ?? []).map(({ source_materials, pages, ...c }) => ({

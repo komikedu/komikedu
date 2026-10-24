@@ -24,6 +24,26 @@ export async function createClient() {
   );
 }
 
+/**
+ * Pengguna untuk halaman yang dijaga middleware (/dashboard dan /comics/**). Middleware sudah mengesahkan token ke server Auth
+ * pada permintaan yang sama dan meneruskan cookie yang disegarkan, jadi di sini cukup membaca token dari cookie tanpa panggilan
+ * jaringan kedua (ratusan milidetik di setiap halaman). JANGAN dipakai di rute yang tidak dijaga middleware, mis. /api/**:
+ * di sana tetap pakai `supabase.auth.getUser()`. Basis data tetap menegakkan hak akses lewat RLS dengan token yang sama.
+ */
+export async function penggunaTerlindungi(supabase: Awaited<ReturnType<typeof createClient>>): Promise<{ id: string; email: string | null } | null> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8")) as { sub?: unknown; email?: unknown };
+    return typeof payload.sub === "string" && payload.sub ? { id: payload.sub, email: typeof payload.email === "string" ? payload.email : null } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Klien service role: melewati RLS. Hanya untuk server (kredit, webhook, job). */
 export function createAdminClient() {
   return createSupabaseClient(

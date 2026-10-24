@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { TAG_KOMUNITAS } from "@/lib/comics/komunitas-cache";
 import { z } from "zod";
 import { laporkanKomik, perbaruiDeskripsi, tarikKomik, terbitkanKomik, type StatusTerbit } from "@/lib/comics/komunitas";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -30,6 +31,7 @@ export async function terbitkanAksi(comicId: string, input: { deskripsi: string;
   const res = await terbitkanKomik(p.supabase, createAdminClient(), p.user.id, comicId, input);
   if (res.ok) {
     revalidatePath("/komunitas");
+    revalidateTag(TAG_KOMUNITAS);
     revalidatePath(`/baca/${comicId}`);
     revalidatePath("/dashboard");
   }
@@ -43,6 +45,7 @@ export async function perbaruiDeskripsiAksi(comicId: string, deskripsi: string, 
   const res = await perbaruiDeskripsi(createAdminClient(), p.user.id, comicId, { deskripsi, tema, bahasa });
   if (res.ok) {
     revalidatePath("/komunitas");
+    revalidateTag(TAG_KOMUNITAS);
     revalidatePath(`/baca/${comicId}`);
   }
   return hasil(res);
@@ -56,6 +59,7 @@ export async function tarikAksi(comicId: string): Promise<AksiHasil<StatusTerbit
   const res = await tarikKomik(createAdminClient(), p.user.id, comicId);
   if (res.ok) {
     revalidatePath("/komunitas");
+    revalidateTag(TAG_KOMUNITAS);
     revalidatePath(`/baca/${comicId}`);
     revalidatePath("/dashboard");
   }

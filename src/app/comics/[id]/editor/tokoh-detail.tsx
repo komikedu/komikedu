@@ -51,6 +51,7 @@ export function TokohDetail({
   const [busy, setBusy] = useState<Busy>(null);
   const [pesan, setPesan] = useState<{ ok: boolean; teks: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [seret, setSeret] = useState(false);
   const [galeri, setGaleri] = useState<GaleriItem[]>([]);
   const gambarAktif = t ? gambarUntuk(t, tab, gaya) : null;
 
@@ -205,15 +206,34 @@ export function TokohDetail({
       <div role="dialog" aria-modal="true" aria-label={`Detail tokoh ${t.nama}`} className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-surface shadow-2xl md:flex-row">
         {/* pratinjau besar */}
         <div className="flex min-h-0 flex-1 flex-col bg-neutral-900 p-4">
-          <div className="relative h-[min(60vh,520px)] w-full overflow-hidden rounded-xl bg-neutral-800 md:h-[min(70vh,560px)]">
+          <div
+            className="relative h-[min(60vh,520px)] w-full overflow-hidden rounded-xl bg-neutral-800 md:h-[min(70vh,560px)]"
+            onDragOver={(e) => {
+              if (!bisaDiubah || sibuk || !e.dataTransfer.types.includes("Files")) return;
+              e.preventDefault();
+              setSeret(true);
+            }}
+            onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setSeret(false)}
+            onDrop={(e) => {
+              setSeret(false);
+              if (!bisaDiubah || sibuk || !e.dataTransfer.files.length) return;
+              e.preventDefault();
+              void unggah(e.dataTransfer.files[0]);
+            }}
+          >
             {gambar ? (
               <Image src={gambar} alt={`${labelTab[tab]} ${t.nama}`} fill unoptimized crossOrigin="anonymous" className="object-contain" />
             ) : (
               <div className="absolute inset-0 grid place-items-center p-6 text-center text-white">
                 <div>
                   <p className="text-lg font-semibold">Buat atau tambahkan gambar karakter</p>
-                  <p className="mt-1 text-xs text-white/60">{tab === "potret" ? "Potret setengah badan untuk avatar dan acuan wajah." : "Seluruh tubuh, untuk acuan pakaian dan postur."}</p>
+                  <p className="mt-1 text-xs text-white/60">{bisaDiubah ? "Seret gambar ke sini atau klik Unggah. " : ""}{tab === "potret" ? "Potret setengah badan untuk avatar dan acuan wajah." : "Seluruh tubuh, untuk acuan pakaian dan postur."}</p>
                 </div>
+              </div>
+            )}
+            {seret && (
+              <div className="pointer-events-none absolute inset-2 z-10 grid place-items-center rounded-xl border-2 border-dashed border-white bg-black/60 p-4 text-center text-sm font-semibold text-white">
+                Lepas gambar di sini untuk mengunggah {labelTab[tab].toLowerCase()}
               </div>
             )}
             {sibuk && busy !== "simpan" && (

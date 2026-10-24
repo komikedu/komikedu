@@ -15,7 +15,7 @@ import { useStatusPanel } from "@/lib/editor/status-panel";
 import { muatFontGaya } from "./font-gaya";
 import { GambarPanel, IsiBalon, IsiElemen, LatarPanel, TepiPanel, klipPanel, titikLokal } from "./bentuk-halaman";
 import { seleksiAktif, useEditor } from "@/lib/editor/store";
-import { PAGE_H, PAGE_W, type Bubble, type MathElement, type Panel, type Point } from "@/lib/editor/types";
+import { type Bubble, type MathElement, type Panel, type Point } from "@/lib/editor/types";
 
 const FIT_PADDING = 48;
 /** Kelebihan ukuran konten (px) yang dianggap bisa digulir saat menggeser kanvas; di bawahnya hanya lebar scrollbar. */
@@ -299,7 +299,8 @@ function ElementView({
 
 /**
  * Mode edit gambar: gambar utuh ditampilkan pudar (bagian di luar panel terlihat), bisa diseret dan
- * diubah ukurannya dari sudut dengan rasio tetap. Gambar di dalam panel mengikuti secara langsung.
+ * diubah ukurannya: titik sudut menjaga rasio, titik tengah (kiri, kanan, atas, bawah) mengubah satu sisi saja.
+ * Gambar di dalam panel mengikuti secara langsung.
  */
 function ImageEditor({
   panel,
@@ -365,7 +366,7 @@ function ImageEditor({
         ref={trRef}
         rotateEnabled={false}
         keepRatio
-        enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right"]}
+        enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right", "middle-left", "middle-right", "top-center", "bottom-center"]}
         borderStroke="#2563eb"
         anchorStroke="#2563eb"
         anchorSize={10}
@@ -579,12 +580,15 @@ export default function EditorCanvas({
   generating = false,
   comicId,
   onLepasGambar,
+  onImporBanyak,
 }: {
   fontFamily: string;
   generating?: boolean;
   comicId?: string;
   /** pasang gambar ke panel (seret-lepas atau tempel); kembalikan pesan galat, atau null bila berhasil. Kosong bila komik belum tersimpan. */
   onLepasGambar?: (panelId: string, file: File) => Promise<string | null>;
+  /** beberapa gambar dilepas sekaligus: tinjau dan pasang lewat dialog (mulai dari panel tujuan) */
+  onImporBanyak?: (berkas: File[], mulaiDi: string) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const trRef = useRef<Konva.Transformer>(null);
@@ -646,6 +650,13 @@ export default function EditorCanvas({
       const pg = st.pages.find((p) => p.id === st.activePageId);
       if (!pg) return;
       const tujuan = panelTujuan(pg.panels, panelId, berkasMentah.length);
+      // beberapa gambar sekaligus: tinjau pasangannya di dialog (gambar bernomor langsung ke panelnya, sisanya mulai dari panel tujuan)
+      if (onImporBanyak && berkasMentah.length >= 2) {
+        const bisa = pilihBerkasGambar(berkasMentah, 200);
+        if (!bisa.berkas.length) return setInfoLepas({ ok: false, teks: bisa.pesan ?? "Tidak ada gambar yang bisa dipasang." });
+        setInfoLepas(bisa.pesan ? { ok: true, teks: bisa.pesan } : null);
+        return onImporBanyak(bisa.berkas, panelId);
+      }
       const pilihan = pilihBerkasGambar(berkasMentah, tujuan.length);
       if (!pilihan.berkas.length) return setInfoLepas({ ok: false, teks: pilihan.pesan ?? "Tidak ada gambar yang bisa dipasang." });
       for (let i = 0; i < pilihan.berkas.length; i++) {
@@ -656,7 +667,7 @@ export default function EditorCanvas({
       }
       setInfoLepas({ ok: true, teks: `Gambar dipasang ke ${pilihan.berkas.length} panel.${pilihan.pesan ? ` ${pilihan.pesan}` : ""} Gambar lama ada di Riwayat gambar.` });
     },
-    [onLepasGambar],
+    [onLepasGambar, onImporBanyak],
   );
 
   // pesan hasil pemasangan hilang sendiri (yang sedang berjalan tetap tampil)
@@ -710,10 +721,10 @@ export default function EditorCanvas({
 
   if (!page) return null;
 
-  const fit = Math.min((size.w - FIT_PADDING) / PAGE_W, (size.h - FIT_PADDING) / PAGE_H);
+  const fit = Math.min((size.w - FIT_PADDING) / page.w, (size.h - FIT_PADDING) / page.h);
   const scale = Math.max(0.05, fit) * zoom;
-  const dasarX = Math.max(0, (size.w - PAGE_W * scale) / 2);
-  const dasarY = Math.max(FIT_PADDING / 2, (size.h - PAGE_H * scale) / 2);
+  const dasarX = Math.max(0, (size.w - page.w * scale) / 2);
+  const dasarY = Math.max(FIT_PADDING / 2, (size.h - page.h * scale) / 2);
   const offsetX = dasarX + geseran.x;
   const offsetY = dasarY + geseran.y;
 
@@ -735,7 +746,8 @@ export default function EditorCanvas({
     const cy = (pos.y - offsetY) / scale;
     if (tool === "mat") addKumpulan(panelId, cx, cy);
     else if (tool === "teksgaya") addTeksGaya(panelId, cx, cy);
-    else addBubble(panelId, "bicara", cx, cy);
+    // alat Teks menaruh teks polos dulu; rupa kotak atau balon dipilih di panel pengaturan
+    else addBubble(panelId, "narasi", cx, cy, { mode: "teks" });
   };
 
   /** Alat Elemen Mat atau Teks gaya diklik di luar panel: elemen bebas di halaman. */
@@ -793,8 +805,8 @@ export default function EditorCanvas({
           if (bisaX) area.scrollLeft = mulai.kiri - dx;
           if (bisaY) area.scrollTop = mulai.atas - dy;
           setGeseran({
-            x: bisaX ? mulai.g.x : tahanGeser(mulai.g.x + dx, dasarX, PAGE_W * scale, size.w),
-            y: bisaY ? mulai.g.y : tahanGeser(mulai.g.y + dy, dasarY, PAGE_H * scale, size.h),
+            x: bisaX ? mulai.g.x : tahanGeser(mulai.g.x + dx, dasarX, page.w * scale, size.w),
+            y: bisaY ? mulai.g.y : tahanGeser(mulai.g.y + dy, dasarY, page.h * scale, size.h),
           });
         };
         const selesai = () => {
@@ -827,14 +839,14 @@ export default function EditorCanvas({
       style={{ cursor: tool === "move" ? "default" : tool === "pan" ? "grab" : "crosshair" }}
     >
       <Stage
-        width={Math.max(size.w, PAGE_W * scale + dasarX * 2)}
-        height={Math.max(size.h, PAGE_H * scale + dasarY * 2)}
+        width={Math.max(size.w, page.w * scale + dasarX * 2)}
+        height={Math.max(size.h, page.h * scale + dasarY * 2)}
         onMouseDown={(e) => {
           if (e.target === e.target.getStage() || e.target.name() === "page-bg") select(null);
         }}
       >
         <Layer x={offsetX} y={offsetY} scaleX={scale} scaleY={scale}>
-          <Rect name="page-bg" width={PAGE_W} height={PAGE_H} fill="#fff" shadowColor="#000" shadowOpacity={0.18} shadowBlur={24} onClick={placeBebas} onTap={placeBebas} />
+          <Rect name="page-bg" width={page.w} height={page.h} fill="#fff" shadowColor="#000" shadowOpacity={0.18} shadowBlur={24} onClick={placeBebas} onTap={placeBebas} />
           {page.panels.map((p, i) => (
             <PanelView
               key={p.id}
@@ -896,10 +908,10 @@ export default function EditorCanvas({
           ))}
           {selPanel && cornerEdit === selPanel.id && <CornerHandles panel={selPanel} scale={scale} snapTh={8 / scale} onGuides={setGuides} />}
           {guides?.x.map((x) => (
-            <Line key={`gx-${x}`} points={[x, 0, x, PAGE_H]} stroke="#db2777" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} listening={false} />
+            <Line key={`gx-${x}`} points={[x, 0, x, page.h]} stroke="#db2777" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} listening={false} />
           ))}
           {guides?.y.map((y) => (
-            <Line key={`gy-${y}`} points={[0, y, PAGE_W, y]} stroke="#db2777" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} listening={false} />
+            <Line key={`gy-${y}`} points={[0, y, page.w, y]} stroke="#db2777" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} listening={false} />
           ))}
           <Transformer
             ref={panelTrRef}
@@ -919,7 +931,7 @@ export default function EditorCanvas({
             borderStroke="#0f766e"
             anchorStroke="#0f766e"
             anchorSize={10}
-            enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right", "middle-left", "middle-right"]}
+            enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right", "middle-left", "middle-right", "top-center", "bottom-center"]}
           />
         </Layer>
       </Stage>

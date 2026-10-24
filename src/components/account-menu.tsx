@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Coins, LogOut } from "lucide-react";
+import Link from "next/link";
+import { ChevronDown, Coins, LogOut, UserRound } from "lucide-react";
 
 export function AccountMenu({ email, nama, saldo }: { email: string; nama: string; saldo: number }) {
   const [open, setOpen] = useState(false);
@@ -45,6 +46,9 @@ export function AccountMenu({ email, nama, saldo }: { email: string; nama: strin
               <Coins size={13} className="text-amber-600" /> {saldo} kredit tersisa
             </p>
           </div>
+          <Link href="/profil" role="menuitem" onClick={() => setOpen(false)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-surface-muted">
+            <UserRound size={14} /> Edit profil
+          </Link>
           <button
             type="button"
             role="menuitem"

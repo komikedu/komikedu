@@ -89,3 +89,39 @@ describe("sudut membulat kotak", () => {
     expect(EditorPayloadSchema.safeParse([{ ...p, bubbles: [{ ...b, gaya: { radius: -1 } }] }]).success).toBe(false);
   });
 });
+
+describe("alat Teks", () => {
+  it("menaruh teks polos (mode Teks, tanpa ekor), bukan balon", async () => {
+    const { useEditor, clearHistory } = await import("./store");
+    const p = createPage("1-penuh");
+    useEditor.setState({ pages: [p], activePageId: p.id, selectedId: null, seleksi: [] });
+    clearHistory();
+    useEditor.getState().addBubble(p.panels[0].id, "narasi", 300, 300, { mode: "teks" });
+    const b = useEditor.getState().pages[0].bubbles[0];
+    expect(modeBalon(b)).toBe("teks");
+    expect(b.tail).toBeNull();
+    expect(useEditor.getState().selectedId).toBe(b.id);
+    // tanpa gaya awal, balon narasi tetap kotak dan balon bicara tetap balon
+    useEditor.getState().addBubble(p.panels[0].id, "bicara", 300, 500);
+    expect(modeBalon(useEditor.getState().pages[0].bubbles[1])).toBe("balon");
+  });
+});
+
+describe("gaya ekor", () => {
+  const dasar = (kind: "bicara" | "pikir" | "narasi", extra: object = {}) => ({ ...createBubble("11111111-1111-4111-8111-111111111111", kind, 300, 300), ...extra });
+  it("bawaan: lancip, kecuali balon pikir atau bentuk awan", () => {
+    expect(gayaTerpakai(dasar("bicara")).ekor).toBe("lancip");
+    expect(gayaTerpakai(dasar("pikir")).ekor).toBe("pikir");
+    expect(gayaTerpakai(dasar("bicara", { bentuk: "awan" })).ekor).toBe("pikir");
+  });
+  it("pilihan guru mengalahkan bawaan, untuk bentuk apa pun", () => {
+    expect(gayaTerpakai(dasar("bicara", { bentuk: "oval", gaya: { ekor: "pikir" } })).ekor).toBe("pikir");
+    expect(gayaTerpakai(dasar("pikir", { gaya: { ekor: "lancip" } })).ekor).toBe("lancip");
+  });
+  it("tersimpan dan hanya nilai yang dikenal diterima", () => {
+    const p = createPage("1-penuh");
+    const b = { ...createBubble(p.panels[0].id, "bicara", 300, 300), gaya: { ekor: "pikir" as const } };
+    expect(EditorPayloadSchema.safeParse(JSON.parse(JSON.stringify([{ ...p, bubbles: [b] }]))).success).toBe(true);
+    expect(EditorPayloadSchema.safeParse([{ ...p, bubbles: [{ ...b, gaya: { ekor: "bulat" } }] }]).success).toBe(false);
+  });
+});

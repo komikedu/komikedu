@@ -4,6 +4,7 @@ import { z } from "zod";
 import { catatVersi } from "@/lib/comics/versi-gambar";
 import { kunciKomik } from "@/lib/storage/gambar";
 import { EditorPayloadSchema, panelSalinan, toRows } from "./persist";
+import { galatUkuran } from "./ukuran-halaman";
 
 export type SaveResult = { ok: true } | { ok: false; error: string; status: number };
 
@@ -20,6 +21,8 @@ export async function saveEditorData(
   pages: unknown,
   /** service role: dipakai hanya untuk menyalin image_url panel salinan, kolom yang tidak boleh ditulis klien */
   admin?: SupabaseClient,
+  /** ukuran kanvas komik; dikirim klien bersama isi editor agar tersimpan dalam satu permintaan dengan halaman yang sudah diskalakan */
+  ukuran?: { w: unknown; h: unknown },
 ): Promise<SaveResult> {
   if (!z.string().uuid().safeParse(comicId).success) return { ok: false, error: "Komik tidak valid", status: 400 };
   const parsed = EditorPayloadSchema.safeParse(pages);
@@ -35,11 +38,22 @@ export async function saveEditorData(
   const { data: comic } = await supabase.from("comics").select("id").eq("id", comicId).eq("user_id", userId).maybeSingle();
   if (!comic) return { ok: false, error: "Komik tidak ditemukan", status: 404 };
 
+  if (ukuran) {
+    const galat = galatUkuran(ukuran);
+    if (galat) return { ok: false, error: galat, status: 400 };
+  }
+
   const rows = toRows(comicId, parsed.data);
   const pageIds = rows.pages.map((p) => p.id);
   const panelIds = rows.panels.map((p) => p.id);
   const bubbleIds = rows.bubbles.map((b) => b.id);
   const fail = (error: string): SaveResult => ({ ok: false, error, status: 500 });
+
+  // ukuran lebih dulu: bila simpanan halaman gagal, klien mengulang dan keduanya tetap searah
+  if (ukuran) {
+    const { error } = await supabase.from("comics").update({ lebar_halaman: ukuran.w, tinggi_halaman: ukuran.h }).eq("id", comicId).eq("user_id", userId);
+    if (error) return fail("Gagal menyimpan ukuran halaman");
+  }
 
   // 1. hapus yang sudah tidak ada di editor (anak dulu, lalu induk)
   const delBubbles = supabase.from("bubbles").delete().in("panel_id", panelIds);

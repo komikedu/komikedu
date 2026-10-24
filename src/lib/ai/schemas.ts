@@ -9,17 +9,31 @@ export const ComicInputSchema = z.object({
   mapel: z.string().default("Matematika"),
   tujuan: z.string().optional(),
   /** Alur cerita dari guru; AI mengikutinya bila ada. */
-  cerita: z.string().max(2000).optional(),
+  cerita: z.string().max(15000).optional(),
+  /** cerita = `cerita` adalah cerita sumber yang diadaptasi menjadi komik (bukan sekadar arahan alur). */
+  sumber: z.enum(["topik", "pdf", "cerita"]).optional(),
+  /** Bahasa dialog dan narasi (bawaan indonesia). */
+  bahasa: z.enum(["indonesia", "inggris", "daerah"]).optional(),
+  /** Id tema pelajaran (lihat klasifikasi.ts), dipakai sebagai petunjuk bagi AI. */
+  tema: z.string().max(40).optional(),
   /** Tokoh pilihan guru; naskah wajib memakai nama ini. */
   tokoh: z.array(z.object({ nama: z.string(), peran: z.string(), deskripsi: z.string() })).max(4).optional(),
   jumlahHalaman: z.number().int().min(4).max(12),
   /** Panel per halaman pilihan guru (1 sampai 6). Kosong = AI memilih 2 sampai 4 sesuai isi. */
   panelPerHalaman: z.number().int().min(1).max(6).nullish(),
+  /** Batas atas rentang panel per halaman (panelPerHalaman = batas bawah). */
+  panelPerHalamanMaks: z.number().int().min(2).max(6).nullish(),
+  /** true = AI memilih jumlah halaman (4 sampai 12); jumlahHalaman hanya cadangan. */
+  halamanOtomatis: z.boolean().optional(),
+  /** Tambahkan halaman sampul di awal naskah (di luar jumlahHalaman). */
+  denganSampul: z.boolean().optional(),
 });
 export type ComicInput = z.infer<typeof ComicInputSchema>;
 
 export const OutlineSchema = z.object({
   judul: z.string(),
+  /** Hanya bila komik bersampul: deskripsi visual ilustrasi sampul (tanpa teks apa pun). */
+  sampul: z.object({ adegan: z.string() }).optional(),
   halaman: z.array(
     z.object({
       urutan: z.number().int().min(1),
@@ -52,6 +66,8 @@ export const PanelSchema = z.object({
 
 const HalamanSchema = z.object({
   urutan: z.number().int().min(1),
+  /** Halaman ini sampul: satu ilustrasi poster dengan ruang untuk judul, tanpa dialog. */
+  sampul: z.boolean().optional(),
   panel: z.array(PanelSchema).min(1).max(6),
 });
 

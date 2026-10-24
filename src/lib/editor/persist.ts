@@ -2,7 +2,8 @@ import { z } from "zod";
 import { LAYOUTS } from "@/lib/ai/layouts";
 import { BENTUK_BALON } from "./bentuk-balon";
 import { FONT_MAX, FONT_MIN, GAYA_TEKS, MAKS_TEKS } from "./gaya-teks";
-import { PAGE_H, PAGE_W, type Bubble, type BentukBalon, type EditorPage, type GayaBalon, type Latar, type MathElement, type Panel } from "./types";
+import { SISI_MAKS } from "./ukuran-halaman";
+import { UKURAN_BAWAAN, type Bubble, type BentukBalon, type EditorPage, type GayaBalon, type Latar, type MathElement, type Panel, type UkuranHalaman } from "./types";
 
 export const MAX_PAGES = 30;
 export const MAX_BUBBLES_PER_PAGE = 40;
@@ -27,6 +28,7 @@ const GayaBalonSchema = z.object({
   tebalStroke: z.number().finite().min(0).max(30).optional(),
   warnaStroke: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   radius: z.number().finite().min(0).max(100).optional(),
+  ekor: z.enum(["lancip", "pikir"]).optional(),
 });
 
 const BENTUK_VALID = new Set<string>(BENTUK_BALON.map((b) => b.id));
@@ -43,10 +45,10 @@ const LatarSchema = z.object({
 
 const PanelSchema = z.object({
   id: z.string().uuid(),
-  x: coord(PAGE_W),
-  y: coord(PAGE_H),
-  w: z.number().finite().min(1).max(PAGE_W),
-  h: z.number().finite().min(1).max(PAGE_H),
+  x: coord(SISI_MAKS),
+  y: coord(SISI_MAKS),
+  w: z.number().finite().min(1).max(SISI_MAKS),
+  h: z.number().finite().min(1).max(SISI_MAKS),
   visible: z.boolean(),
   /** id panel asal bila ini salinan yang gambarnya harus disalin server */
   salinanDari: z.string().uuid().optional(),
@@ -54,17 +56,17 @@ const PanelSchema = z.object({
   adegan: z.string().max(1000),
   /** sudut panel miring; null/absen = panel kotak */
   corners: z
-    .array(z.object({ x: coord(PAGE_W), y: coord(PAGE_H) }))
+    .array(z.object({ x: coord(SISI_MAKS), y: coord(SISI_MAKS) }))
     .length(4)
     .nullable()
     .optional(),
   /** posisi gambar yang diatur guru; null/absen = otomatis memenuhi panel */
   imageRect: z
     .object({
-      x: z.number().finite().min(-PAGE_W).max(PAGE_W * 2),
-      y: z.number().finite().min(-PAGE_H).max(PAGE_H * 2),
-      w: z.number().finite().min(1).max(PAGE_W * 3),
-      h: z.number().finite().min(1).max(PAGE_H * 3),
+      x: z.number().finite().min(-SISI_MAKS).max(SISI_MAKS * 2),
+      y: z.number().finite().min(-SISI_MAKS).max(SISI_MAKS * 2),
+      w: z.number().finite().min(1).max(SISI_MAKS * 3),
+      h: z.number().finite().min(1).max(SISI_MAKS * 3),
     })
     .nullable()
     .optional(),
@@ -75,10 +77,10 @@ const PanelSchema = z.object({
 const elemenDasar = {
   id: z.string().uuid(),
   panelId: z.string().uuid().nullable(),
-  x: coord(PAGE_W),
-  y: coord(PAGE_H),
-  w: z.number().finite().min(20).max(PAGE_W * 2),
-  h: z.number().finite().min(20).max(PAGE_H * 2),
+  x: coord(SISI_MAKS),
+  y: coord(SISI_MAKS),
+  w: z.number().finite().min(20).max(SISI_MAKS * 2),
+  h: z.number().finite().min(20).max(SISI_MAKS * 2),
   rotasi: z.number().finite().min(-360).max(360).optional(),
   visible: z.boolean(),
 };
@@ -119,10 +121,10 @@ const BubbleSchema = z.object({
   bentuk: z.enum(["oval", "kotak", "awan", "ledakan", "teriak", "gerak"]).optional(),
   gaya: GayaBalonSchema.optional(),
   text: z.string().max(MAX_BUBBLE_TEXT),
-  x: coord(PAGE_W),
-  y: coord(PAGE_H),
-  w: z.number().finite().min(20).max(PAGE_W * 2),
-  h: z.number().finite().min(20).max(PAGE_H * 2),
+  x: coord(SISI_MAKS),
+  y: coord(SISI_MAKS),
+  w: z.number().finite().min(20).max(SISI_MAKS * 2),
+  h: z.number().finite().min(20).max(SISI_MAKS * 2),
   tail: z.object({ dx: z.number().finite(), dy: z.number().finite(), lebar: z.number().finite().min(8).max(300).optional() }).nullable(),
   fontSize: z.number().int().min(8).max(96),
   visible: z.boolean(),
@@ -273,7 +275,8 @@ export type NestedPage = {
   }[];
 };
 
-export function fromNested(rows: NestedPage[]): EditorPage[] {
+/** Halaman editor dari baris database; `ukuran` adalah ukuran kanvas komiknya (kolom komik, bukan halaman). */
+export function fromNested(rows: NestedPage[], ukuran: UkuranHalaman = UKURAN_BAWAAN): EditorPage[] {
   return [...rows]
     .sort((a, b) => a.urutan - b.urutan)
     .map((page) => {
@@ -284,7 +287,7 @@ export function fromNested(rows: NestedPage[]): EditorPage[] {
       [...page.panels]
         .sort((a, b) => a.urutan - b.urutan)
         .forEach((p, pIdx) => {
-          const { corners, gambar, latar, ...pos } = p.posisi ?? { x: 0, y: 0, w: PAGE_W, h: PAGE_H };
+          const { corners, gambar, latar, ...pos } = p.posisi ?? { x: 0, y: 0, w: ukuran.w, h: ukuran.h };
           panels.push({
             id: p.id,
             ...pos,
@@ -321,6 +324,8 @@ export function fromNested(rows: NestedPage[]): EditorPage[] {
       bubbles.sort((a, b) => a._o - b._o || a._p - b._p);
       return {
         id: page.id,
+        w: ukuran.w,
+        h: ukuran.h,
         layoutId: page.template_layout ?? LAYOUTS[0].id,
         panels,
         elements,

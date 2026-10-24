@@ -3,9 +3,11 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PublicHeader } from "@/components/public-header";
 import { daftarTerbit } from "@/lib/comics/komunitas";
+import { adaFilter, bacaFilter, urlKomunitas } from "@/lib/comics/klasifikasi";
 import { nomorHalaman } from "@/lib/comics/komunitas-schema";
 import { waktuRelatif } from "@/lib/comics/status";
 import { createAdminClient } from "@/lib/supabase/server";
+import { FilterKomunitasForm } from "./filter-komunitas";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +16,11 @@ export const metadata: Metadata = {
   description: "Komik edukasi buatan guru Indonesia. Baca gratis, tanpa perlu masuk.",
 };
 
-export default async function KomunitasPage({ searchParams }: { searchParams: Promise<{ halaman?: string }> }) {
-  const halaman = nomorHalaman((await searchParams).halaman);
-  const res = await daftarTerbit(createAdminClient(), halaman);
+export default async function KomunitasPage({ searchParams }: { searchParams: Promise<{ halaman?: string; jenjang?: string; tema?: string; bahasa?: string }> }) {
+  const query = await searchParams;
+  const halaman = nomorHalaman(query.halaman);
+  const filter = bacaFilter(query);
+  const res = await daftarTerbit(createAdminClient(), halaman, filter);
   const now = new Date();
 
   return (
@@ -25,6 +29,7 @@ export default async function KomunitasPage({ searchParams }: { searchParams: Pr
       <main className="mx-auto max-w-6xl px-4 py-8">
         <h1 className="text-2xl font-bold">Komunitas</h1>
         <p className="mt-1 text-gray-600">Komik edukasi buatan guru. Baca gratis, tanpa perlu masuk.</p>
+        <FilterKomunitasForm filter={filter} />
 
         {!res.ok ? (
           <p role="alert" className="mt-6 rounded-lg bg-red-50 p-4 text-sm text-red-700">
@@ -32,7 +37,11 @@ export default async function KomunitasPage({ searchParams }: { searchParams: Pr
           </p>
         ) : res.komik.length === 0 ? (
           <div className="mt-10 rounded-xl border border-dashed border-line bg-surface p-10 text-center text-gray-600">
-            {halaman > 1 ? "Tidak ada komik di halaman ini." : "Belum ada komik yang diterbitkan. Jadilah yang pertama: terbitkan komikmu dari editor."}
+            {halaman > 1
+              ? "Tidak ada komik di halaman ini."
+              : adaFilter(filter)
+                ? "Belum ada komik yang cocok dengan saringan ini. Coba ubah atau hapus saringannya."
+                : "Belum ada komik yang diterbitkan. Jadilah yang pertama: terbitkan komikmu dari editor."}
           </div>
         ) : (
           <ul className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -61,13 +70,13 @@ export default async function KomunitasPage({ searchParams }: { searchParams: Pr
         {res.ok && (halaman > 1 || res.adaLagi) && (
           <nav aria-label="Halaman daftar" className="mt-8 flex items-center justify-center gap-3 text-sm">
             {halaman > 1 && (
-              <Link href={halaman === 2 ? "/komunitas" : `/komunitas?halaman=${halaman - 1}`} className="flex items-center gap-1 rounded-lg border border-line bg-surface px-3 py-1.5 hover:bg-surface-muted">
+              <Link href={urlKomunitas(filter, halaman - 1)} className="flex items-center gap-1 rounded-lg border border-line bg-surface px-3 py-1.5 hover:bg-surface-muted">
                 <ChevronLeft size={15} /> Sebelumnya
               </Link>
             )}
             <span className="text-gray-500">Halaman {halaman}</span>
             {res.adaLagi && (
-              <Link href={`/komunitas?halaman=${halaman + 1}`} className="flex items-center gap-1 rounded-lg border border-line bg-surface px-3 py-1.5 hover:bg-surface-muted">
+              <Link href={urlKomunitas(filter, halaman + 1)} className="flex items-center gap-1 rounded-lg border border-line bg-surface px-3 py-1.5 hover:bg-surface-muted">
                 Berikutnya <ChevronRight size={15} />
               </Link>
             )}

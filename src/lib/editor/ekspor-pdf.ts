@@ -1,8 +1,13 @@
 import { PDFDocument } from "pdf-lib";
 
-/** Ukuran halaman PDF dalam poin (3:4, sama dengan rasio halaman editor): 7,5 x 10 inci. */
-export const PDF_LEBAR = 540;
-export const PDF_TINGGI = 720;
+/** Sisi terpanjang lembar PDF dalam poin (10 inci). Lembar mengikuti rasio gambar: halaman 3:4 menjadi 540 x 720. */
+export const PDF_SISI = 720;
+
+/** Ukuran lembar PDF (poin) untuk gambar berukuran lebar x tinggi piksel. */
+export function ukuranLembar(lebar: number, tinggi: number): { lebar: number; tinggi: number } {
+  const k = PDF_SISI / Math.max(lebar, tinggi);
+  return { lebar: Math.round(lebar * k), tinggi: Math.round(tinggi * k) };
+}
 
 /** Nama berkas aman dari judul komik: tanpa karakter terlarang, maksimal 80 karakter, selalu berakhiran .pdf. */
 export function namaBerkasPdf(judul: string): string {
@@ -17,7 +22,7 @@ export function namaBerkasPdf(judul: string): string {
   return `${bersih || "komik"}.pdf`;
 }
 
-/** Gabungkan gambar JPEG halaman (urut) menjadi satu PDF, satu halaman per gambar memenuhi seluruh lembar. */
+/** Gabungkan gambar JPEG halaman (urut) menjadi satu PDF, satu halaman per gambar memenuhi seluruh lembar (lembar mengikuti rasio gambar). */
 export async function buatPdf(jpegs: Uint8Array[], judul: string): Promise<Uint8Array> {
   if (!jpegs.length) throw new Error("Tidak ada halaman untuk diekspor");
   const pdf = await PDFDocument.create();
@@ -26,8 +31,9 @@ export async function buatPdf(jpegs: Uint8Array[], judul: string): Promise<Uint8
   pdf.setProducer("KomikEdu");
   for (const bytes of jpegs) {
     const gambar = await pdf.embedJpg(bytes);
-    const halaman = pdf.addPage([PDF_LEBAR, PDF_TINGGI]);
-    halaman.drawImage(gambar, { x: 0, y: 0, width: PDF_LEBAR, height: PDF_TINGGI });
+    const { lebar, tinggi } = ukuranLembar(gambar.width, gambar.height);
+    const halaman = pdf.addPage([lebar, tinggi]);
+    halaman.drawImage(gambar, { x: 0, y: 0, width: lebar, height: tinggi });
   }
   return pdf.save();
 }

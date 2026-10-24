@@ -40,7 +40,8 @@ const CONTOH: Script = {
 };
 
 /** Pratinjau tinjauan naskah dengan data contoh, tanpa login. Hanya ada saat development. */
-export default function DevNaskahPage() {
+export default async function DevNaskahPage({ searchParams }: { searchParams: Promise<{ berubah?: string }> }) {
+  const berubah = (await searchParams).berubah === "1";
   if (process.env.NODE_ENV === "production") notFound();
 
   async function simpanPalsu(_id: string, naskah: unknown) {
@@ -56,8 +57,9 @@ export default function DevNaskahPage() {
       <NaskahView
         comicId="00000000-0000-4000-8000-000000000000"
         judul="Petualangan Bangun Datar di Taman Bermain"
-        ringkasan={{ topik: "Bangun datar", jenjang: 5, jumlahHalaman: 4, gaya: "kartun-cerah", adaMateri: false }}
+        ringkasan={{ topik: "Bangun datar", jenjang: 5, jumlahHalaman: 4, halamanOtomatis: false, sumber: "topik", gaya: "kartun-cerah", adaMateri: false }}
         status="review"
+        pengaturanBerubah={berubah}
         naskah={CONTOH}
         flags={checkScript(CONTOH)}
         versi="contoh"

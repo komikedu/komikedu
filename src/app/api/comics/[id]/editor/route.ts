@@ -32,7 +32,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const { id } = await params;
-  const res = await saveEditorData(supabase, user.id, id, body, createAdminClient());
+  // bentuk baru: { pages, ukuran }; bentuk lama (hanya daftar halaman) tetap diterima
+  const { pages, ukuran } = Array.isArray(body) ? { pages: body, ukuran: undefined } : ((body ?? {}) as { pages?: unknown; ukuran?: { w: unknown; h: unknown } });
+  const res = await saveEditorData(supabase, user.id, id, pages, createAdminClient(), ukuran);
   return res.ok
     ? NextResponse.json({ ok: true })
     : NextResponse.json({ ok: false, error: res.error }, { status: res.status });

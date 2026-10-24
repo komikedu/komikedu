@@ -1,3 +1,4 @@
+import type { UkuranHalaman } from "@/lib/editor/types";
 import type { Rect } from "./layouts";
 
 export type PageImageRequest = {
@@ -11,8 +12,12 @@ export type PageImageRequest = {
     rect: Rect;
     /** jumlah balon dialog di panel; menentukan ruang kosong di bagian atas gambar (kosong = anggap 1-2) */
     balon?: number;
+    /** panel ini sampul komik: komposisi poster dengan ruang judul di atas */
+    sampul?: boolean;
   }[];
   gaya: string;
+  /** Ukuran kanvas halaman; menentukan rasio gambar. Kosong = vertikal 3:4. */
+  ukuran?: UkuranHalaman;
   /** Deskripsi karakter yang muncul, agar wajah dan pakaian konsisten. */
   karakter: { nama: string; deskripsi: string }[];
   /** 1-3 gambar referensi (potret tokoh atau halaman sebelumnya), sudah dalam bentuk byte, dengan label isinya. */

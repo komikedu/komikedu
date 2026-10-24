@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { FlipHorizontal2 } from "lucide-react";
 import { BENTUK_BALON, LEBAR_EKOR_MAX, LEBAR_EKOR_MIN, PANJANG_EKOR_MAX, PANJANG_EKOR_MIN, aturanEkor, balikEkor, ekorDariAturan, garisGerak, lingkaranAwan, titikGerigi, ukuranBentuk } from "@/lib/editor/bentuk-balon";
+import { gayaTerpakai } from "@/lib/editor/gaya-balon";
 import { useEditor } from "@/lib/editor/store";
+import { Saklar } from "./saklar";
 import type { Bubble, BentukBalon } from "@/lib/editor/types";
 
 const W = 84;
@@ -108,6 +110,7 @@ export function PengaturanEkor({ bubble }: { bubble: Bubble }) {
   const update = useEditor((s) => s.updateBubble);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tail = bubble.tail;
+  const gayaEkor = gayaTerpakai(bubble).ekor;
   const [draf, setDraf] = useState(() => (tail ? aturanEkor(bubble.w, bubble.h, tail) : null));
 
   // ikuti perubahan dari luar (undo, seret ujung ekor di kanvas), kecuali saat guru sedang menggeser slider
@@ -132,10 +135,7 @@ export function PengaturanEkor({ bubble }: { bubble: Bubble }) {
 
   return (
     <div className="space-y-3">
-      <label className="flex items-center justify-between">
-        <span className="font-semibold">Ekor balon</span>
-        <input type="checkbox" checked={!!tail} onChange={(e) => update(bubble.id, { tail: e.target.checked ? { dx: 20, dy: bubble.h / 2 + 40 } : null })} />
-      </label>
+      <Saklar keterangan="Ekor balon" aktif={!!tail} onUbah={(v) => update(bubble.id, { tail: v ? { dx: 20, dy: bubble.h / 2 + 40 } : null })} />
       {tail && draf && (
         <div className="space-y-3 rounded-lg border border-line p-3 text-xs">
           <button
@@ -145,6 +145,26 @@ export function PengaturanEkor({ bubble }: { bubble: Bubble }) {
           >
             <FlipHorizontal2 size={14} /> Balik ekor
           </button>
+          {bubble.bentuk !== "awan" && (
+            <div role="group" aria-label="Gaya ekor" className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  ["lancip", "Lancip"],
+                  ["pikir", "Pikiran"],
+                ] as const
+              ).map(([nilai, nama]) => (
+                <button
+                  key={nilai}
+                  type="button"
+                  aria-pressed={gayaEkor === nilai}
+                  onClick={() => update(bubble.id, { gaya: { ...bubble.gaya, ekor: nilai } })}
+                  className={`rounded-lg border px-2 py-2 font-semibold ${gayaEkor === nilai ? "border-brand bg-brand text-brand-foreground" : "border-line hover:bg-surface-muted"}`}
+                >
+                  {nama}
+                </button>
+              ))}
+            </div>
+          )}
           <label className="block">
             <span className="text-gray-600">Arah ekor: {draf.arah}°</span>
             <input type="range" min={0} max={360} value={draf.arah} onChange={(e) => ubah({ arah: Number(e.target.value) })} className={geser} />
@@ -153,10 +173,12 @@ export function PengaturanEkor({ bubble }: { bubble: Bubble }) {
             <span className="text-gray-600">Panjang ekor: {draf.panjang}</span>
             <input type="range" min={PANJANG_EKOR_MIN} max={PANJANG_EKOR_MAX} value={Math.min(PANJANG_EKOR_MAX, Math.max(PANJANG_EKOR_MIN, draf.panjang))} onChange={(e) => ubah({ panjang: Number(e.target.value) })} className={geser} />
           </label>
+          {gayaEkor === "lancip" && bubble.bentuk !== "awan" && (
           <label className="block">
             <span className="text-gray-600">Lebar pangkal ekor: {Math.round(draf.lebar)}</span>
             <input type="range" min={LEBAR_EKOR_MIN} max={LEBAR_EKOR_MAX} value={Math.min(LEBAR_EKOR_MAX, Math.max(LEBAR_EKOR_MIN, draf.lebar))} onChange={(e) => ubah({ lebar: Number(e.target.value) })} className={geser} />
           </label>
+          )}
           <p className="text-gray-500">Ujung ekor juga bisa diseret langsung di kanvas.</p>
         </div>
       )}

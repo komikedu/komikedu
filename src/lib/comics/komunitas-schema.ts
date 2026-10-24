@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BAHASA_IDS, TEMA_IDS } from "./klasifikasi";
 
 export const MAX_DESKRIPSI = 300;
 export const MAX_CATATAN_LAPORAN = 500;
@@ -21,6 +22,9 @@ const alasanIds = ALASAN_LAPORAN.map((a) => a.id) as [AlasanLaporan, ...AlasanLa
 /** Pernyataan wajib dicentang sebelum menerbitkan. Tanpa itu, komik tidak boleh terbit. */
 export const TerbitSchema = z.object({
   deskripsi: z.string().trim().max(MAX_DESKRIPSI, `Deskripsi maksimal ${MAX_DESKRIPSI} karakter`).default(""),
+  /** pengelompokan di galeri komunitas; kosong = Lainnya dan bahasa Indonesia */
+  tema: z.enum(TEMA_IDS, { error: "Tema tidak dikenal" }).default("lainnya"),
+  bahasa: z.enum(BAHASA_IDS, { error: "Bahasa tidak dikenal" }).default("indonesia"),
   setuju: z.literal(true, { error: "Centang pernyataan hak cipta dan kelayakan konten dulu" }),
   /** id penerbitan: halaman salinan sudah diunggah dengan id ini sebelum memanggil terbit */
   rilis: z.string().uuid({ error: "Permintaan tidak valid" }),
@@ -30,6 +34,8 @@ export type TerbitInput = z.input<typeof TerbitSchema>;
 
 export const PerbaruiDeskripsiSchema = z.object({
   deskripsi: z.string().trim().max(MAX_DESKRIPSI, `Deskripsi maksimal ${MAX_DESKRIPSI} karakter`),
+  tema: z.enum(TEMA_IDS, { error: "Tema tidak dikenal" }).optional(),
+  bahasa: z.enum(BAHASA_IDS, { error: "Bahasa tidak dikenal" }).optional(),
 });
 
 export const LaporSchema = z.object({

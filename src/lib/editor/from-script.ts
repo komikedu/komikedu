@@ -1,7 +1,7 @@
 import type { Script } from "@/lib/ai/schemas";
 import { layoutHalaman } from "@/lib/comics/naskah";
-import { createPage, newId } from "./factory";
-import type { Bubble, EditorPage, Panel } from "./types";
+import { createPage, createTeks, newId } from "./factory";
+import { UKURAN_BAWAAN, type Bubble, type EditorPage, type Panel, type UkuranHalaman } from "./types";
 
 type ScriptPanel = Script["halaman"][number]["panel"][number];
 
@@ -46,13 +46,36 @@ export function layoutBubbles(panel: Panel, dialog: ScriptPanel["dialog"]): Bubb
   return bubbles;
 }
 
-export type PanelScriptJson = Pick<ScriptPanel, "adegan" | "karakter" | "dialog" | "hitungan">;
+export type PanelScriptJson = Pick<ScriptPanel, "adegan" | "karakter" | "dialog" | "hitungan"> & { sampul?: boolean };
+
+/** Panjang judul sampul yang dipakai (judul komik bisa sampai 120 karakter, teks bergaya maksimal 80). */
+const MAKS_JUDUL_SAMPUL = 80;
+
+/**
+ * Judul di sampul: teks bergaya "Judul kuning" bebas di atas halaman, di area yang dikosongkan prompt gambar sampul.
+ * Ukuran huruf mengecil untuk judul panjang agar muat dalam dua sampai tiga baris.
+ */
+export function judulSampul(judul: string, ukuran: UkuranHalaman) {
+  const teks = judul.replace(/\s+/g, " ").trim().slice(0, MAKS_JUDUL_SAMPUL);
+  const el = createTeks(null, ukuran.w / 2, ukuran.h * 0.14, "judul-kuning", teks || "Judul komik");
+  const w = Math.round(ukuran.w * 0.88);
+  const h = Math.round(ukuran.h * 0.24);
+  el.w = w;
+  el.h = h;
+  el.x = Math.round((ukuran.w - w) / 2);
+  el.y = Math.round(ukuran.h * 0.03);
+  // huruf lebih kecil untuk judul panjang: kira-kira 18 huruf per baris pada ukuran 110 dengan lebar 880
+  const perBaris = Math.max(1, Math.floor((w / ukuran.w) * 20));
+  const baris = Math.ceil(el.text.length / perBaris);
+  el.fontSize = Math.max(40, Math.min(110, Math.round(h / Math.max(1, baris) / 1.25), Math.round((w / Math.min(el.text.length, perBaris)) * 1.1)));
+  return el;
+}
 
 /**
  * Ubah naskah yang sudah disetujui menjadi halaman editor.
  * Mengembalikan juga isi script_json per panel (disimpan server, dipakai untuk membuat gambar).
  */
-export function scriptToPages(script: Script): { pages: EditorPage[]; panelScripts: Map<string, PanelScriptJson> } {
+export function scriptToPages(script: Script, ukuran: UkuranHalaman = UKURAN_BAWAAN, judul = ""): { pages: EditorPage[]; panelScripts: Map<string, PanelScriptJson> } {
   const panelScripts = new Map<string, PanelScriptJson>();
   const pages = [...script.halaman]
     .sort((a, b) => a.urutan - b.urutan)
@@ -61,12 +84,14 @@ export function scriptToPages(script: Script): { pages: EditorPage[]; panelScrip
       const page = createPage(
         layoutHalaman(h),
         scriptPanels.map((p) => p.adegan),
+        ukuran,
       );
       page.panels.forEach((panel, i) => {
         const sp = scriptPanels[i];
-        panelScripts.set(panel.id, { adegan: sp.adegan, karakter: sp.karakter, dialog: sp.dialog, hitungan: sp.hitungan });
+        panelScripts.set(panel.id, { adegan: sp.adegan, karakter: sp.karakter, dialog: sp.dialog, hitungan: sp.hitungan, ...(h.sampul ? { sampul: true } : {}) });
         page.bubbles.push(...layoutBubbles(panel, sp.dialog));
       });
+      if (h.sampul && judul.trim()) page.elements.push(judulSampul(judul, ukuran));
       return page;
     });
   return { pages, panelScripts };

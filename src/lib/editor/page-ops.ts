@@ -11,7 +11,7 @@ import type { EditorPage } from "./types";
 export function insertPageAfter(pages: EditorPage[], id: string): string | null {
   const idx = pages.findIndex((p) => p.id === id);
   if (idx < 0 || pages.length >= MAX_PAGES) return null;
-  const baru = createPage(pages[idx].layoutId);
+  const baru = createPage(pages[idx].layoutId, [], { w: pages[idx].w, h: pages[idx].h });
   pages.splice(idx + 1, 0, baru);
   return baru.id;
 }
@@ -28,6 +28,8 @@ export function duplicatePage(pages: EditorPage[], id: string): string | null {
   const peta = new Map(asal.panels.map((p) => [p.id, newId()]));
   const salinan: EditorPage = {
     id: newId(),
+    w: asal.w,
+    h: asal.h,
     layoutId: asal.layoutId,
     panels: asal.panels.map((p) => ({
       ...p,

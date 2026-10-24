@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { LAYOUTS } from "@/lib/ai/layouts";
 import { PageThumb } from "@/components/page-thumb";
+import { PilihUkuranHalaman } from "@/components/pilih-ukuran-halaman";
 import type { HalamanThumb } from "@/lib/comics/thumb";
 import { MAX_PANELS_PER_PAGE } from "@/lib/editor/panel-ops";
 import { MAX_PAGES } from "@/lib/editor/persist";
@@ -43,11 +44,16 @@ import { useStatusPanel } from "@/lib/editor/status-panel";
 import { bacaHalamanAktif, simpanHalamanAktif } from "@/lib/editor/halaman-aktif";
 import { applyPanelImages, clearHistory, redo, selectSelectedBubble, selectSelectedElement, selectSelectedPanel, seleksiAktif, undo, useEditor } from "@/lib/editor/store";
 import type { BubbleKind, EditorPage, MathElement, Panel as EditorPanel } from "@/lib/editor/types";
+import type { BahasaId, TemaId } from "@/lib/comics/klasifikasi";
+import { ukuranDariHalaman } from "@/lib/editor/ukuran-halaman";
 import { GAYA } from "@/lib/comics/schema";
 import { alamatPotret, buatPromptFlow, rasioTerdekat, tokohDiTeks } from "@/lib/comics/prompt-flow";
+import { buatFlowDariHalaman, teksPromptPanel } from "@/lib/comics/naskah-flow";
 import type { Tokoh } from "@/lib/comics/tokoh";
 import { AdeganInput, NamaTokohContext } from "./adegan-input";
 import { salin, potong, tempel } from "@/lib/editor/papan-klip";
+import { pilihBerkasGambar } from "@/lib/editor/lepas-gambar";
+import { DialogImporGambar } from "./dialog-impor-gambar";
 import { LatarSection } from "./latar-section";
 import { PemisahTinggi, useTinggiPanel } from "./pemisah-tinggi";
 import { BalonBanyak } from "./pilih-bentuk-balon";
@@ -96,6 +102,7 @@ function ToolButton({ label, active, disabled, onClick, children }: { label: str
 /** Halaman editor sebagai data thumbnail: panel dengan gambarnya di posisi aslinya. */
 function thumbHalaman(page: EditorPage): HalamanThumb {
   return {
+    ukuran: { w: page.w, h: page.h },
     panels: page.panels.filter((p) => p.visible).map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h, corners: p.corners ?? undefined, gambar: p.imageRect ?? undefined, latar: p.latar ?? undefined, imageUrl: p.imageUrl })),
   };
 }
@@ -414,6 +421,10 @@ type GenerateProps = {
   melengkapi: boolean;
   pesanLengkapi: { ok: boolean; teks: string } | null;
   onLengkapi: () => void;
+  /** buka dialog pasang banyak gambar; hanya tersedia di komik yang tersimpan */
+  onImporBanyak: (berkas: File[]) => void;
+  /** data untuk menyalin prompt semua panel ke Flow atau ChatGPT */
+  flow: { judul: string; gaya: string | null; tokoh: Tokoh[] };
 };
 
 const GAMBAR_COST = 1;
@@ -692,6 +703,94 @@ function EditAiSection({ panelId, ai }: { panelId: string; ai: EditAiProps }) {
   );
 }
 
+/** Pasang banyak gambar sekaligus, mis. hasil Google Flow atau GPT yang diberi nama 1-1, 1-2, dst. */
+function ImporBanyakSection({ gen }: { gen: GenerateProps }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [pesan, setPesan] = useState<string | null>(null);
+  const [pesanSalin, setPesanSalin] = useState<{ ok: boolean; teks: string } | null>(null);
+  const halaman = useEditor((s) => s.pages);
+
+  async function salinSemua(bentuk: "json" | "teks") {
+    const flow = buatFlowDariHalaman({ ...gen.flow, halaman });
+    if (!flow.panel.length) return setPesanSalin({ ok: false, teks: "Belum ada panel beradegan yang bisa disalin." });
+    try {
+      await navigator.clipboard.writeText(bentuk === "json" ? JSON.stringify(flow, null, 2) : teksPromptPanel(flow));
+      setPesanSalin({ ok: true, teks: `Prompt ${flow.panel.length} panel disalin. Tempel di Google Flow atau ChatGPT.` });
+    } catch {
+      setPesanSalin({ ok: false, teks: "Gagal menyalin. Coba lagi." });
+    }
+  }
+
+  function pilih(daftar: FileList | null) {
+    if (!daftar?.length) return;
+    const hasil = pilihBerkasGambar(Array.from(daftar), 200);
+    if (!hasil.berkas.length) return setPesan(hasil.pesan ?? "Tidak ada gambar yang bisa dipasang.");
+    setPesan(hasil.pesan);
+    gen.onImporBanyak(hasil.berkas);
+  }
+
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <h3 className="font-semibold">Pasang banyak gambar</h3>
+      <p className="mt-1 text-xs text-gray-500">
+        Untuk gambar dari Google Flow atau GPT. Beri nama berkas <b>1-1</b>, <b>1-2</b>, <b>2-1</b>, dan seterusnya (halaman-panel) agar langsung masuk ke panelnya. Gratis, tanpa kredit.
+      </p>
+      <button
+        type="button"
+        disabled={!gen.tersimpan || gen.generating}
+        onClick={() => inputRef.current?.click()}
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs font-semibold hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <Upload size={14} /> Pilih banyak gambar
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept="image/png,image/jpeg,image/webp"
+        className="sr-only"
+        aria-label="Pilih banyak gambar untuk dipasang ke panel"
+        onChange={(e) => {
+          pilih(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      {pesan && <p className="mt-2 text-xs text-amber-800">{pesan}</p>}
+
+      <p className="mt-4 text-xs font-medium text-gray-700">Belum punya gambarnya? Salin prompt untuk semua panel.</p>
+      <div className="mt-1.5 grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => void salinSemua("teks")} className="flex items-center justify-center gap-1.5 rounded-lg border border-line px-2 py-2 text-xs font-semibold hover:bg-surface-muted">
+          <Copy size={13} /> Prompt teks
+        </button>
+        <button type="button" onClick={() => void salinSemua("json")} className="flex items-center justify-center gap-1.5 rounded-lg border border-line px-2 py-2 text-xs font-semibold hover:bg-surface-muted">
+          <Copy size={13} /> JSON Flow
+        </button>
+      </div>
+      {pesanSalin && (
+        <p role={pesanSalin.ok ? "status" : "alert"} className={`mt-2 text-xs ${pesanSalin.ok ? "text-emerald-700" : "text-red-700"}`}>
+          {pesanSalin.teks}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Ukuran kanvas seluruh komik. Mengubahnya menskalakan isi semua halaman dan bisa dibatalkan dengan undo. */
+function UkuranSection({ page }: { page: EditorPage }) {
+  const ubah = useEditor((s) => s.ubahUkuranHalaman);
+  return (
+    <div>
+      <h3 className="font-semibold">Ukuran halaman</h3>
+      <p className="mt-1 text-xs text-gray-500">
+        Berlaku untuk semua halaman ({page.w} x {page.h}). Isi halaman ikut diskalakan; gambar yang sudah dibuat tidak diregangkan tapi bisa terpotong. Bisa dibatalkan dengan Ctrl+Z.
+      </p>
+      <div className="mt-2">
+        <PilihUkuranHalaman key={`${page.w}x${page.h}`} nilai={{ w: page.w, h: page.h }} onChange={ubah} />
+      </div>
+    </div>
+  );
+}
+
 function PageTab({ page, gen }: { page: EditorPage; gen: GenerateProps }) {
   const updatePanel = useEditor((s) => s.updatePanel);
   const tanpaAdegan = page.panels.findIndex((p) => !p.adegan.trim());
@@ -740,6 +839,8 @@ function PageTab({ page, gen }: { page: EditorPage; gen: GenerateProps }) {
           </p>
         )}
       </div>
+      <ImporBanyakSection gen={gen} />
+      <UkuranSection page={page} />
       <div>
         <h3 className="font-semibold">Gambar halaman</h3>
         <p className="mt-1 text-xs text-gray-500">
@@ -961,7 +1062,7 @@ const KEEPALIVE_LIMIT = 60_000; // batas body fetch keepalive di browser adalah 
 
 /** Kirim isi editor ke API. keepalive membuat permintaan tetap terkirim setelah halaman ditinggalkan. */
 async function postSave(comicId: string, pages: EditorPage[], keepalive: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
-  const body = JSON.stringify(pages);
+  const body = JSON.stringify({ pages, ukuran: ukuranDariHalaman(pages) });
   try {
     const res = await fetch(`/api/comics/${comicId}/editor`, {
       method: "PUT",
@@ -1078,7 +1179,7 @@ export function EditorShell({
   tokoh = [],
   gaya = null,
   karakter = [],
-  terbit = { terbit: false, deskripsi: "" },
+  terbit = { terbit: false, deskripsi: "", tema: null, bahasa: "indonesia" },
   penulis = "Guru KomikEdu",
 }: {
   comicId?: string;
@@ -1091,7 +1192,7 @@ export function EditorShell({
   /** lembar karakter komik (karakter_json) */
   karakter?: { nama: string; deskripsi: string }[];
   /** status komunitas komik (diterbitkan atau belum, dan deskripsi publiknya) */
-  terbit?: { terbit: boolean; deskripsi: string };
+  terbit?: { terbit: boolean; deskripsi: string; tema?: TemaId | null; bahasa?: BahasaId };
   /** nama profil yang tampil sebagai penulis di komunitas */
   penulis?: string;
 }) {
@@ -1110,6 +1211,9 @@ export function EditorShell({
   const [generatingPage, setGeneratingPage] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
+  /** gambar yang sedang ditinjau untuk dipasang sekaligus (dari tombol atau seret-lepas beberapa berkas) */
+  const pages = useEditor((s) => s.pages);
+  const [imporBanyak, setImporBanyak] = useState<{ berkas: File[]; mulaiDi?: string } | null>(null);
   /** tokoh di naskah yang belum ada di daftar: dialog "buat semua tokoh" sebelum membuat gambar halaman */
   const [perluTokoh, setPerluTokoh] = useState<{ pageId: string; nama: string[] } | null>(null);
   const [daftarTokoh, setDaftarTokoh] = useState(tokoh);
@@ -1184,6 +1288,8 @@ export function EditorShell({
       setEditingPanel(null);
     }
   }
+
+  const bukaImporBanyak = useCallback((berkas: File[], mulaiDi?: string) => setImporBanyak({ berkas, mulaiDi }), []);
 
   async function unggahPanel(panelId: string, file: File, sumber?: "tanpa-latar"): Promise<string | null> {
     if (!comicId) return "Komik belum tersimpan";
@@ -1410,7 +1516,7 @@ export function EditorShell({
         <Link href="/dashboard" className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-surface px-4 py-1.5 text-sm shadow">
           <Home size={14} /> Dashboard
         </Link>
-        <EditorCanvas fontFamily={fontFamily} generating={generatingPage === page.id} comicId={comicId} onLepasGambar={comicId ? unggahPanel : undefined} />
+        <EditorCanvas fontFamily={fontFamily} generating={generatingPage === page.id} comicId={comicId} onLepasGambar={comicId ? unggahPanel : undefined} onImporBanyak={comicId ? bukaImporBanyak : undefined} />
 
         <div role="toolbar" aria-label="Alat" className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-surface p-1.5 shadow-lg">
           <ToolButton label="Pilih" active={tool === "move"} onClick={() => setTool("move")}>
@@ -1500,6 +1606,8 @@ export function EditorShell({
                 melengkapi,
                 pesanLengkapi,
                 onLengkapi: () => void lengkapiNaskah(page.id),
+                onImporBanyak: bukaImporBanyak,
+                flow: { judul: title, gaya, tokoh: daftarTokoh },
               }}
             />
           ) : tab === "tokoh" ? (
@@ -1521,6 +1629,9 @@ export function EditorShell({
         </div>
         </NamaTokohContext.Provider>
       </aside>
+      {imporBanyak && comicId && (
+        <DialogImporGambar pages={pages} berkas={imporBanyak.berkas} mulaiDi={imporBanyak.mulaiDi} onUnggah={(panelId, file) => unggahPanel(panelId, file)} onTutup={() => setImporBanyak(null)} />
+      )}
       {perluTokoh && comicId && (
         <DialogTokohNaskah
           key={perluTokoh.pageId}

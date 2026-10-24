@@ -15,6 +15,21 @@ describe("aturanPanelPerHalaman", () => {
   });
 });
 
+describe("rentang panel per halaman", () => {
+  it("batas bawah dan atas membentuk rentang yang boleh berbeda tiap halaman", () => {
+    const r = aturanPanelPerHalaman(2, 6);
+    expect(r).toMatch(/antara 2 dan 6 panel/);
+    expect(r).toMatch(/boleh berbeda tiap halaman/);
+    expect(r).not.toMatch(/TEPAT/);
+  });
+  it("rentang tidak valid jatuh ke jumlah tetap atau otomatis", () => {
+    expect(aturanPanelPerHalaman(3, 3)).toMatch(/TEPAT 3 panel/);
+    expect(aturanPanelPerHalaman(4, 2)).toMatch(/TEPAT 4 panel/);
+    expect(aturanPanelPerHalaman(3, 9)).toMatch(/TEPAT 3 panel/);
+    expect(aturanPanelPerHalaman(null, 5)).toMatch(/2 sampai 4 panel/);
+  });
+});
+
 describe("panel per halaman sampai 6", () => {
   it("setiap jumlah 1 sampai 6 punya template layout", () => {
     for (let n = 1; n <= 6; n++) expect(layoutForPanelCount(n).panels).toHaveLength(n);

@@ -1,9 +1,9 @@
 import { PDFDocument } from "pdf-lib";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { PDF_LEBAR, PDF_TINGGI, buatPdf, namaBerkasPdf } from "./ekspor-pdf";
+import { buatPdf, namaBerkasPdf, ukuranLembar } from "./ekspor-pdf";
 
-const jpeg = (warna: string) => sharp({ create: { width: 90, height: 120, channels: 3, background: warna } }).jpeg().toBuffer();
+const jpeg = (warna: string, width = 90, height = 120) => sharp({ create: { width, height, channels: 3, background: warna } }).jpeg().toBuffer();
 
 describe("buatPdf", () => {
   it("satu halaman per gambar, ukuran 3:4, berurutan, dengan judul", async () => {
@@ -11,9 +11,20 @@ describe("buatPdf", () => {
     expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
     const pdf = await PDFDocument.load(bytes);
     expect(pdf.getPageCount()).toBe(3);
-    for (const h of pdf.getPages()) expect(h.getSize()).toEqual({ width: PDF_LEBAR, height: PDF_TINGGI });
-    expect(PDF_LEBAR / PDF_TINGGI).toBeCloseTo(3 / 4);
+    for (const h of pdf.getPages()) expect(h.getSize()).toEqual({ width: 540, height: 720 });
     expect(pdf.getTitle()).toBe("Petualangan KPK");
+  });
+
+  it("lembar mengikuti rasio gambar: kotak dan horizontal", async () => {
+    const bytes = await buatPdf([new Uint8Array(await jpeg("#ff0000", 100, 100)), new Uint8Array(await jpeg("#0000ff", 120, 90))], "x");
+    const [kotak, datar] = (await PDFDocument.load(bytes)).getPages();
+    expect(kotak.getSize()).toEqual({ width: 720, height: 720 });
+    expect(datar.getSize()).toEqual({ width: 720, height: 540 });
+  });
+
+  it("ukuranLembar menjaga sisi terpanjang 720 poin", () => {
+    expect(ukuranLembar(1350, 1800)).toEqual({ lebar: 540, tinggi: 720 });
+    expect(ukuranLembar(1800, 600)).toEqual({ lebar: 720, tinggi: 240 });
   });
 
   it("menolak daftar halaman kosong dan data yang bukan JPEG", async () => {

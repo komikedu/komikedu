@@ -1,6 +1,6 @@
 import { PAGE_MARGIN } from "./factory";
 import { PANEL_GAP, panelCorners } from "./panel-ops";
-import { PAGE_H, PAGE_W, type EditorPage, type Point } from "./types";
+import { type EditorPage, type Point } from "./types";
 
 /** Jarak tempel dalam unit halaman (kanvas menyesuaikannya dengan zoom agar terasa sama di layar). */
 export const SNAP_DISTANCE = 10;
@@ -15,8 +15,8 @@ export type Guides = { x: number[]; y: number[] };
 const uniq = (a: number[]) => [...new Set(a.map((v) => Math.round(v)))];
 
 export function snapTargets(page: EditorPage, excludePanelId: string, gap = PANEL_GAP): SnapTargets {
-  const xs = [0, PAGE_W, PAGE_MARGIN, PAGE_W - PAGE_MARGIN, PAGE_W / 2];
-  const ys = [0, PAGE_H, PAGE_MARGIN, PAGE_H - PAGE_MARGIN, PAGE_H / 2];
+  const xs = [0, page.w, PAGE_MARGIN, page.w - PAGE_MARGIN, page.w / 2];
+  const ys = [0, page.h, PAGE_MARGIN, page.h - PAGE_MARGIN, page.h / 2];
   const xsGap: number[] = [];
   const ysGap: number[] = [];
   for (const p of page.panels) {

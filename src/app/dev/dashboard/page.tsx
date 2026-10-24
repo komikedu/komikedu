@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { AppHeaderView } from "@/components/app-header";
 import { DashboardView } from "@/app/dashboard/dashboard-view";
+import type { KartuKomunitas } from "@/lib/comics/komunitas";
 import type { ComicSummary } from "@/lib/comics/status";
 
 const contohHalaman = {
@@ -24,10 +25,17 @@ export default function DevDashboardPage() {
     { ...base, id: "d4", judul: "Komik tanpa judul", naskah_status: "none", topik: null, gaya: null, created_at: ago(60 * 24 * 5) },
     { ...base, id: "e5", judul: "Jam dan Waktu", jenjang: 2, naskah_status: "error", topik: "Jam", gaya: "kartun-cerah", created_at: ago(60 * 24 * 9) },
   ];
+  const komunitas: KartuKomunitas[] = [
+    { id: "k1", judul: "Reno dan Reni: Belajar Jam", jenjang: 2, deskripsi: "", diterbitkan: ago(45), penulis: "Bu Rina", sampul: "/landing/halaman-contoh.webp" },
+    { id: "k2", judul: "Petualangan Pecahan", jenjang: 4, deskripsi: "", diterbitkan: ago(60 * 5), penulis: "Pak Budi", sampul: "/gaya/kartun-cerah.webp" },
+    { id: "k3", judul: "Misi Bangun Datar", jenjang: 3, deskripsi: "", diterbitkan: ago(60 * 30), penulis: "Bu Sari", sampul: null },
+    { id: "k4", judul: "KPK di Pasar", jenjang: 5, deskripsi: "", diterbitkan: ago(60 * 50), penulis: "Bu Dewi", sampul: "/gaya/anime-lembut.webp" },
+    { id: "k5", judul: "Uang dan Tabungan", jenjang: 3, deskripsi: "", diterbitkan: ago(60 * 80), penulis: "Pak Joko", sampul: null },
+  ];
   return (
     <div className="min-h-screen bg-surface-muted">
       <AppHeaderView aktif="beranda" user={{ email: "guru@sekolah.sch.id", nama: "Bu Rina", saldo: 13 }} />
-      <DashboardView nama="Bu Rina" comics={comics} now={now} />
+      <DashboardView nama="Bu Rina" comics={comics} komunitas={komunitas} now={now} />
     </div>
   );
 }

@@ -1,5 +1,8 @@
 import type { PageImageRequest, PanelEditRequest, PortraitRequest } from "./image-provider";
+import { UKURAN_BAWAAN, type UkuranHalaman } from "@/lib/editor/types";
+import { rasioAi } from "@/lib/editor/ukuran-halaman";
 import type { Rect } from "./layouts";
+import { komposisiSampul } from "./sampul";
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 const describeRect = (r: Rect) =>
@@ -29,6 +32,12 @@ export function ruangBalon(jumlah?: number, bingkai = "bingkai"): string {
 const daftarReferensi = (refs: { label?: string }[], awal: number) =>
   refs.map((r, i) => `${i + awal}) ${r.label ?? "desain karakter"}`).join("; ");
 
+/** Bentuk halaman untuk prompt, mis. "vertikal (rasio 3:4)". */
+function bentukHalaman(u: UkuranHalaman): string {
+  const arah = u.w === u.h ? "persegi" : u.h > u.w ? "vertikal" : "horizontal";
+  return `${arah} (rasio ${rasioAi(u)})`;
+}
+
 export function buildPagePrompt(req: PageImageRequest): string {
   if (req.panels.length < 1) throw new Error("Halaman tanpa panel");
   const panels = req.panels
@@ -36,7 +45,7 @@ export function buildPagePrompt(req: PageImageRequest): string {
       (p, i) =>
         `Panel ${i + 1} (${describeRect(p.rect)}): ${p.adegan}` +
         (p.karakter.length ? ` Karakter: ${p.karakter.join(", ")}.` : "") +
-        (ruangBalon(p.balon, "panel") ? ` ${ruangBalon(p.balon, "panel").trim()}` : ""),
+        (p.sampul ? ` ${komposisiSampul("panel").trim()}` : ruangBalon(p.balon, "panel") ? ` ${ruangBalon(p.balon, "panel").trim()}` : ""),
     )
     .join("\n");
   // tokoh yang punya potret: gambar acuan yang menentukan wajah, rambut, dan pakaian; deskripsi teks hanya catatan.
@@ -52,7 +61,7 @@ export function buildPagePrompt(req: PageImageRequest): string {
     .join("\n");
 
   return [
-    `Gambar SATU halaman komik edukasi vertikal (rasio 3:4) untuk anak SD, gaya ${req.gaya}.`,
+    `Gambar SATU halaman komik edukasi ${bentukHalaman(req.ukuran ?? UKURAN_BAWAAN)} untuk anak SD, gaya ${req.gaya}.`,
     `Tata letak: ${req.panels.length} panel pada posisi berikut, masing-masing berbingkai garis hitam dan dipisahkan celah putih.`,
     panels,
     chars
@@ -129,9 +138,9 @@ export function buildPanelPrompt(
   const chars = tampil.map((k) => `- ${k.nama}: ${k.deskripsi}`).join("\n");
   return [
     `Satu adegan ilustrasi komik edukasi untuk anak SD Indonesia, gaya ${req.gaya}. Gambar penuh satu bingkai, tanpa pembagian panel.`,
-    `Adegan: ${panel.adegan}`,
+    `${panel.sampul ? "Isi sampul" : "Adegan"}: ${panel.adegan}`,
     chars ? `Tokoh yang tampil:\n${chars}` : "",
-    ruangBalon(panel.balon).trim(),
+    panel.sampul ? komposisiSampul().trim() : ruangBalon(panel.balon).trim(),
     req.referenceImages?.length
       ? "Gambar referensi: " +
         req.referenceImages.map((r, i) => `image ${i} = ${r.label ?? "desain karakter"}`).join("; ") +

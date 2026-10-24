@@ -3,6 +3,7 @@ import { ChevronRight, LayoutTemplate, Sparkles } from "lucide-react";
 import { createDraft } from "@/app/comics/actions";
 import { PageThumb } from "@/components/page-thumb";
 import { ComicMenu } from "./comic-menu";
+import type { KartuKomunitas } from "@/lib/comics/komunitas";
 import { nextStep, waktuRelatif, type ComicSummary, type NextStep } from "@/lib/comics/status";
 
 const TONE: Record<NextStep["tone"], string> = {
@@ -43,7 +44,48 @@ function Badge({ step }: { step: NextStep }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE[step.tone]}`}>{step.badge}</span>;
 }
 
-export function DashboardView({ nama, comics, now }: { nama: string; comics: ComicSummary[]; now?: Date }) {
+/** Kolom yang terlihat per lebar layar; kartu di atas jumlah itu disembunyikan supaya selalu satu baris. */
+const KOLOM_TAMPIL = ["", "", "hidden sm:block", "hidden md:block", "hidden lg:block"];
+
+/** Satu baris komik terbaru dari komunitas, tautan ke halaman baca dan ke daftar lengkap. */
+function BarisKomunitas({ komik, now }: { komik: KartuKomunitas[]; now?: Date }) {
+  const tampil = komik.slice(0, KOLOM_TAMPIL.length);
+  return (
+    <section aria-labelledby="dari-komunitas" className="mt-10">
+      <div className="flex items-baseline justify-between">
+        <h2 id="dari-komunitas" className="text-sm font-semibold text-gray-700">
+          Dari komunitas
+        </h2>
+        <Link href="/komunitas" className="flex items-center gap-0.5 text-sm text-brand hover:underline">
+          Lihat semua <ChevronRight size={14} />
+        </Link>
+      </div>
+      <ul className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        {tampil.map((k, i) => (
+          <li key={k.id} className={KOLOM_TAMPIL[i]}>
+            <Link href={`/baca/${k.id}`} className="group block">
+              <div className="overflow-hidden rounded-lg bg-surface ring-1 ring-line transition group-hover:ring-2 group-hover:ring-brand">
+                {k.sampul ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={k.sampul} alt="" width={1350} height={1800} loading="lazy" decoding="async" className="aspect-[3/4] h-auto w-full object-cover" />
+                ) : (
+                  <div className="grid aspect-[3/4] place-items-center bg-gradient-to-br from-teal-100 to-emerald-50 px-3 text-center text-sm font-semibold text-gray-700">{k.judul}</div>
+                )}
+              </div>
+              <p className="mt-2 truncate text-sm font-medium">{k.judul}</p>
+              <p className="truncate text-xs text-gray-500">
+                {k.penulis} · SD kelas {k.jenjang}
+                {k.diterbitkan ? ` · ${waktuRelatif(k.diterbitkan, now)}` : ""}
+              </p>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function DashboardView({ nama, comics, komunitas = [], now }: { nama: string; comics: ComicSummary[]; /** komik terbit terbaru dari komunitas; kosong = bagian ini tidak ditampilkan */ komunitas?: KartuKomunitas[]; now?: Date }) {
   const terakhir = comics[0];
   const stepTerakhir = terakhir ? nextStep(terakhir) : null;
 
@@ -141,6 +183,8 @@ export function DashboardView({ nama, comics, now }: { nama: string; comics: Com
           </div>
         )}
       </section>
+
+      {komunitas.length > 0 && <BarisKomunitas komik={komunitas} now={now} />}
     </main>
   );
 }

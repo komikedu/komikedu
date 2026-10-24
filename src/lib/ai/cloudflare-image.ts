@@ -1,13 +1,17 @@
 import "server-only";
 import sharp, { type OverlayOptions } from "sharp";
 import type { ImageProvider, PageImageRequest, PageImageResult, PanelEditRequest, PortraitRequest } from "./image-provider";
+import { UKURAN_BAWAAN, type UkuranHalaman } from "@/lib/editor/types";
 import { buildEditPrompt, buildPanelPrompt, buildPortraitPrompt } from "./page-prompt";
 import { catatBiaya } from "./usage";
 
 export const CF_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-4b";
 
-/** Ukuran kanvas halaman gabungan (3:4); panel ditempel tepat di posisi template agar crop pas. */
-const PAGE_PX = { w: 1152, h: 1536 };
+/** Ukuran kanvas halaman gabungan: sisi terpanjang 1536 mengikuti rasio halaman (3:4 menjadi 1152 x 1536); panel ditempel tepat di posisi template agar crop pas. */
+export function ukuranKanvasHalaman(u: UkuranHalaman): { w: number; h: number } {
+  const k = 1536 / Math.max(u.w, u.h);
+  return { w: Math.round(u.w * k), h: Math.round(u.h * k) };
+}
 const MAX_SISI = 1024;
 const MAX_REF = 4; // batas model: input_image_0..3
 const REF_MAKS_PX = 511; // semua gambar input harus lebih kecil dari 512x512
@@ -46,6 +50,7 @@ export class CloudflareImageProvider implements ImageProvider {
   async generatePage(req: PageImageRequest): Promise<PageImageResult> {
     if (req.panels.length < 1) throw new Error("Halaman tanpa panel");
     const refs = (req.referenceImages ?? []).slice(0, MAX_REF);
+    const PAGE_PX = ukuranKanvasHalaman(req.ukuran ?? UKURAN_BAWAAN);
     const tempel: OverlayOptions[] = [];
     // berurutan, bukan paralel, agar tidak kena batas laju akun gratis
     for (const panel of req.panels) {

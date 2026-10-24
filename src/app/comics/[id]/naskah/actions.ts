@@ -5,9 +5,11 @@ import { createScript } from "@/lib/ai/pipeline";
 import { flagMemblokir, type Flag } from "@/lib/ai/schemas";
 import { barisGenerations, rekamPemakaian, type Pemakaian } from "@/lib/ai/usage";
 import { NASKAH_COST, NaskahEditSchema, uuid } from "@/lib/comics/naskah-edit";
-import { draftErrors } from "@/lib/comics/schema";
+import { sidikPengaturan } from "@/lib/comics/pengaturan-naskah";
+import { draftErrors, type Sumber } from "@/lib/comics/schema";
 import type { Tokoh } from "@/lib/comics/tokoh";
 import { scriptToPages } from "@/lib/editor/from-script";
+import { ukuranDariBaris } from "@/lib/editor/ukuran-halaman";
 import { toRows } from "@/lib/editor/persist";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
@@ -32,12 +34,12 @@ async function ownComic(comicId: string, columns: string) {
  * sehingga job gagal tidak memakan kredit (sesuai PRD).
  */
 export async function generateNaskah(comicId: string): Promise<Result> {
-  const own = await ownComic(comicId, "judul, topik, jenjang, mapel, tujuan, cerita, tokoh_json, jumlah_halaman, panel_per_halaman, gaya, naskah_status");
+  const own = await ownComic(comicId, "judul, topik, jenjang, mapel, tujuan, cerita, sumber, tokoh_json, jumlah_halaman, halaman_otomatis, panel_per_halaman, panel_per_halaman_maks, dengan_sampul, tema, bahasa, gaya, naskah_status");
   if (!own) return { ok: false, error: "Komik tidak ditemukan" };
   const { supabase, user, comic } = own;
 
   const { data: materi } = await supabase.from("source_materials").select("teks_ekstraksi").eq("comic_id", comicId).maybeSingle();
-  const errors = draftErrors({ topik: comic.topik as string | null, gaya: comic.gaya as never }, !!materi?.teks_ekstraksi);
+  const errors = draftErrors({ topik: comic.topik as string | null, gaya: comic.gaya as never, sumber: (comic.sumber as Sumber | undefined) ?? "topik", cerita: comic.cerita as string | null }, !!materi?.teks_ekstraksi);
   if (errors.length) return { ok: false, error: errors[0] };
 
   const admin = createAdminClient();
@@ -70,19 +72,25 @@ export async function generateNaskah(comicId: string): Promise<Result> {
   try {
     const { outline, script, flags } = await rekamPemakaian(pemakaian, () => createScript({
       topik: (comic.topik as string | null)?.trim() || (comic.judul as string),
-      materi: materi?.teks_ekstraksi ?? undefined,
+      materi: comic.sumber === "cerita" ? undefined : (materi?.teks_ekstraksi ?? undefined),
       jenjang: comic.jenjang as number,
       mapel: comic.mapel as string,
       tujuan: (comic.tujuan as string | null) ?? undefined,
       cerita: (comic.cerita as string | null) ?? undefined,
+      sumber: (comic.sumber as Sumber | undefined) ?? "topik",
+      bahasa: comic.bahasa === "inggris" || comic.bahasa === "daerah" ? comic.bahasa : "indonesia",
+      tema: (comic.tema as string | null) ?? undefined,
       tokoh: ((comic.tokoh_json as Tokoh[] | null) ?? []).map((t) => ({ nama: t.nama, peran: t.peran, deskripsi: t.deskripsi })),
       jumlahHalaman: comic.jumlah_halaman as number,
+      halamanOtomatis: comic.halaman_otomatis === true,
       panelPerHalaman: (comic.panel_per_halaman as number | null) ?? null,
+      panelPerHalamanMaks: (comic.panel_per_halaman_maks as number | null) ?? null,
+      denganSampul: comic.dengan_sampul === true,
     }));
     const judul = comic.judul === "Komik tanpa judul" ? outline.judul.slice(0, 120) : (comic.judul as string);
     const { error } = await admin
       .from("comics")
-      .update({ outline_json: outline, naskah_json: script, naskah_flags: flags, naskah_status: "review", naskah_error: null, judul })
+      .update({ outline_json: outline, naskah_json: script, naskah_flags: flags, naskah_status: "review", naskah_error: null, judul, naskah_pengaturan: sidikPengaturan(comic) })
       .eq("id", comicId);
     if (error) throw error;
     await admin.from("generations").insert(barisGenerations(pemakaian, { user_id: user.id, jenis: "naskah", provider: "gemini", status: "selesai" }));
@@ -120,7 +128,7 @@ export async function saveNaskah(comicId: string, naskah: unknown): Promise<Resu
 
 /** Setujui naskah: ubah menjadi halaman, panel, dan balon di editor (menggantikan isi editor). */
 export async function approveNaskah(comicId: string): Promise<Result> {
-  const own = await ownComic(comicId, "naskah_status, naskah_json");
+  const own = await ownComic(comicId, "judul, naskah_status, naskah_json, lebar_halaman, tinggi_halaman");
   if (!own) return { ok: false, error: "Komik tidak ditemukan" };
   const { supabase, user, comic } = own;
   if (comic.naskah_status !== "review") return { ok: false, error: "Naskah tidak sedang ditinjau" };
@@ -130,7 +138,7 @@ export async function approveNaskah(comicId: string): Promise<Result> {
   const flags = checkScript(parsed.data).filter(flagMemblokir);
   if (flags.length) return { ok: false, error: `Masih ada ${flags.length} tanda yang perlu diperbaiki` };
 
-  const { pages, panelScripts } = scriptToPages(parsed.data);
+  const { pages, panelScripts } = scriptToPages(parsed.data, ukuranDariBaris(comic), comic.judul as string);
   const rows = toRows(comicId, pages);
 
   // klien pengguna (RLS memastikan semua baris milik komik ini)

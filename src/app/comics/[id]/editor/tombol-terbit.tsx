@@ -1,12 +1,14 @@
 "use client";
 
+import { Dropdown } from "@/components/dropdown";
 import { useEffect, useState } from "react";
 import { Check, Copy, Download, ExternalLink, Globe, Loader2, X } from "lucide-react";
 import { perbaruiDeskripsiAksi, tarikAksi, terbitkanAksi } from "@/app/comics/komunitas-actions";
+import { BAHASA, TEMA, type BahasaId, type TemaId } from "@/lib/comics/klasifikasi";
 import { MAX_DESKRIPSI } from "@/lib/comics/komunitas-schema";
 import { useEditor } from "@/lib/editor/store";
 
-type Status = { terbit: boolean; deskripsi: string };
+type Status = { terbit: boolean; deskripsi: string; tema?: TemaId | null; bahasa?: BahasaId };
 
 const PESAN_KONEKSI = "Tidak ada koneksi. Coba lagi.";
 
@@ -30,6 +32,8 @@ export function TombolTerbit({ comicId, awal, penulis, fontFamily, simpanDulu }:
   const [status, setStatus] = useState<Status>(awal);
   const [buka, setBuka] = useState(false);
   const [deskripsi, setDeskripsi] = useState(awal.deskripsi);
+  const [tema, setTema] = useState<TemaId>(awal.tema ?? "lainnya");
+  const [bahasa, setBahasa] = useState<BahasaId>(awal.bahasa ?? "indonesia");
   const [setuju, setSetuju] = useState(false);
   const [pesan, setPesan] = useState<{ ok: boolean; teks: string } | null>(null);
   const [salin, setSalin] = useState(false);
@@ -51,6 +55,8 @@ export function TombolTerbit({ comicId, awal, penulis, fontFamily, simpanDulu }:
 
   function bukaDialog() {
     setDeskripsi(status.deskripsi);
+    setTema(status.tema ?? "lainnya");
+    setBahasa(status.bahasa ?? "indonesia");
     setSetuju(false);
     setPesan(null);
     setSalin(false);
@@ -78,9 +84,9 @@ export function TombolTerbit({ comicId, awal, penulis, fontFamily, simpanDulu }:
       }
 
       setSibuk("Menerbitkan...");
-      const res = await terbitkanAksi(comicId!, { deskripsi, setuju, rilis, jumlah: jpegs.length });
+      const res = await terbitkanAksi(comicId!, { deskripsi, tema, bahasa, setuju, rilis, jumlah: jpegs.length });
       if (res.ok) {
-        setStatus({ terbit: true, deskripsi: res.deskripsi });
+        setStatus({ terbit: true, deskripsi: res.deskripsi, tema: res.tema, bahasa: res.bahasa });
         setSetuju(false);
         setPesan({ ok: true, teks: status.terbit ? "Komik publik diperbarui dengan isi terbaru." : "Komik diterbitkan. Siapa saja bisa membacanya lewat tautan di bawah." });
       } else setPesan({ ok: false, teks: res.error });
@@ -100,10 +106,10 @@ export function TombolTerbit({ comicId, awal, penulis, fontFamily, simpanDulu }:
     setPesan(null);
     setSibuk("Menyimpan...");
     try {
-      const res = await perbaruiDeskripsiAksi(comicId!, deskripsi);
+      const res = await perbaruiDeskripsiAksi(comicId!, deskripsi, tema, bahasa);
       if (res.ok) {
-        setStatus({ terbit: true, deskripsi: res.deskripsi });
-        setPesan({ ok: true, teks: "Deskripsi diperbarui." });
+        setStatus({ terbit: true, deskripsi: res.deskripsi, tema: res.tema, bahasa: res.bahasa });
+        setPesan({ ok: true, teks: "Perubahan disimpan." });
       } else setPesan({ ok: false, teks: res.error });
     } catch {
       setPesan({ ok: false, teks: PESAN_KONEKSI });
@@ -119,7 +125,7 @@ export function TombolTerbit({ comicId, awal, penulis, fontFamily, simpanDulu }:
     try {
       const res = await tarikAksi(comicId!);
       if (res.ok) {
-        setStatus({ terbit: false, deskripsi: res.deskripsi });
+        setStatus({ terbit: false, deskripsi: res.deskripsi, tema: status.tema, bahasa: status.bahasa });
         setBuka(false);
       } else setPesan({ ok: false, teks: res.error });
     } catch {
@@ -213,7 +219,34 @@ export function TombolTerbit({ comicId, awal, penulis, fontFamily, simpanDulu }:
               {deskripsi.length}/{MAX_DESKRIPSI}
             </p>
 
-            {status.terbit && <p className="mt-1 text-xs font-medium text-gray-600">Perbarui isi komik publik</p>}
+            <fieldset className="mt-3">
+              <legend className="text-xs font-medium text-gray-600">Dikelompokkan di komunitas</legend>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <label className="text-[11px] text-gray-500">
+                  Tema
+                  <Dropdown value={tema} onChange={(e) => setTema(e.target.value as TemaId)} disabled={memproses} className="mt-0.5 w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-foreground">
+                    {TEMA.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.nama}
+                      </option>
+                    ))}
+                  </Dropdown>
+                </label>
+                <label className="text-[11px] text-gray-500">
+                  Bahasa
+                  <Dropdown value={bahasa} onChange={(e) => setBahasa(e.target.value as BahasaId)} disabled={memproses} className="mt-0.5 w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-foreground">
+                    {BAHASA.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.nama}
+                      </option>
+                    ))}
+                  </Dropdown>
+                </label>
+              </div>
+              <p className="mt-1 text-[11px] text-gray-500">Jenjang mengikuti kelas komik. Pembaca bisa menyaring komunitas menurut kelas, tema, dan bahasa.</p>
+            </fieldset>
+
+            {status.terbit && <p className="mt-3 text-xs font-medium text-gray-600">Perbarui isi komik publik</p>}
             {pernyataan}
 
             {sibuk && (
@@ -236,10 +269,10 @@ export function TombolTerbit({ comicId, awal, penulis, fontFamily, simpanDulu }:
                   <button
                     type="button"
                     onClick={() => void simpanDeskripsi()}
-                    disabled={memproses || deskripsi.trim() === status.deskripsi}
+                    disabled={memproses || (deskripsi.trim() === status.deskripsi && tema === (status.tema ?? "lainnya") && bahasa === (status.bahasa ?? "indonesia"))}
                     className="rounded-lg border border-line px-3 py-2 text-sm hover:bg-surface-muted disabled:opacity-40"
                   >
-                    Simpan deskripsi
+                    Simpan perubahan
                   </button>
                   <button type="button" onClick={() => void terbitkan()} disabled={!setuju || memproses} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-foreground disabled:opacity-40">
                     Perbarui komik publik

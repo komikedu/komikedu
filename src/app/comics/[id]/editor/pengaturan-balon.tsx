@@ -1,10 +1,12 @@
 "use client";
 
+import { Dropdown } from "@/components/dropdown";
 import { AlignCenter, AlignLeft, AlignRight, Bold, Italic, MessageCircle, Square, Type } from "lucide-react";
 import { FONT_BALON, FONT_BALON_MAKS, FONT_BALON_MIN, GARIS_MAKS, MODE_BALON, RADIUS_MAKS, STROKE_MAKS, gayaTerpakai } from "@/lib/editor/gaya-balon";
 import { useEditor } from "@/lib/editor/store";
 import type { Bubble, GayaBalon, ModeBalon } from "@/lib/editor/types";
 import { FONT_GAYA } from "./font-gaya";
+import { Saklar } from "./saklar";
 import { PengaturanEkor, PetunjukPilihBanyak, PilihBentukBalon } from "./pilih-bentuk-balon";
 
 const IKON_MODE: Record<ModeBalon, React.ReactNode> = {
@@ -101,7 +103,7 @@ export function PengaturanBalon({ bubble }: { bubble: Bubble }) {
       </div>
 
       <div className="space-y-3">
-        <select
+        <Dropdown
           aria-label="Font"
           value={g.font}
           onChange={(e) => ubahGaya({ font: e.target.value })}
@@ -113,7 +115,7 @@ export function PengaturanBalon({ bubble }: { bubble: Bubble }) {
               {f.nama}
             </option>
           ))}
-        </select>
+        </Dropdown>
         <SliderAngka label="Ukuran huruf" id="ukuran-huruf-balon" min={FONT_BALON_MIN} max={FONT_BALON_MAKS} nilai={bubble.fontSize} onUbah={(n) => update(bubble.id, { fontSize: n })} />
       </div>
 
@@ -166,10 +168,7 @@ export function PengaturanBalon({ bubble }: { bubble: Bubble }) {
       </div>
 
       <div className="space-y-3 border-t border-line pt-4">
-        <label className="flex items-center justify-between">
-          <span className="font-semibold">Efek stroke pada huruf</span>
-          <input type="checkbox" role="switch" aria-label="Aktifkan stroke" checked={g.stroke} onChange={(e) => ubahGaya({ stroke: e.target.checked })} className="h-4 w-4 accent-brand" />
-        </label>
+        <Saklar keterangan="Efek stroke pada huruf" aktif={g.stroke} onUbah={(v) => ubahGaya({ stroke: v })} />
         {g.stroke && (
           <div className="flex items-end gap-3">
             <label className="flex flex-col items-center gap-1 text-xs text-gray-600">

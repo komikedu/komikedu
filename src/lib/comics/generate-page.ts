@@ -12,7 +12,7 @@ import { catatVersi } from "@/lib/comics/versi-gambar";
 import { simpanGambar } from "@/lib/storage/gambar";
 import { potretTokoh, punyaPotret } from "@/lib/comics/referensi-tokoh";
 import { sheetCocok, tambahTokohDariSheet, type Tokoh } from "@/lib/comics/tokoh";
-import { PAGE_H, PAGE_W } from "@/lib/editor/types";
+import { ukuranDariBaris } from "@/lib/editor/ukuran-halaman";
 
 export const GAMBAR_COST = 1;
 
@@ -21,7 +21,7 @@ type PanelRow = {
   urutan: number;
   posisi: { x: number; y: number; w: number; h: number } | null;
   adegan: string | null;
-  script_json: { adegan?: string; karakter?: string[]; dialog?: { karakter: string; teks?: string }[] } | null;
+  script_json: { adegan?: string; karakter?: string[]; dialog?: { karakter: string; teks?: string }[]; sampul?: boolean } | null;
 };
 
 export type GenerateResult =
@@ -45,7 +45,7 @@ export async function generatePageImage(
 ): Promise<GenerateResult> {
   const { data: comic } = await supabase
     .from("comics")
-    .select("id, user_id, jenjang, gaya, cerita, tokoh_json, karakter_json, ref_halaman_url")
+    .select("id, user_id, jenjang, gaya, cerita, tokoh_json, karakter_json, ref_halaman_url, lebar_halaman, tinggi_halaman")
     .eq("id", comicId)
     .maybeSingle();
   if (!comic || comic.user_id !== userId) return { ok: false, error: "Komik tidak ditemukan", status: 404 };
@@ -144,16 +144,18 @@ export async function generatePageImage(
       ])
     ).filter((r): r is NonNullable<typeof r> => r !== null);
 
+    const ukuran = ukuranDariBaris(comic);
     const rects = panels.map((p) => {
-      const pos = p.posisi ?? { x: 0, y: 0, w: PAGE_W, h: PAGE_H };
-      return { x: pos.x / PAGE_W, y: pos.y / PAGE_H, w: pos.w / PAGE_W, h: pos.h / PAGE_H };
+      const pos = p.posisi ?? { x: 0, y: 0, w: ukuran.w, h: ukuran.h };
+      return { x: pos.x / ukuran.w, y: pos.y / ukuran.h, w: pos.w / ukuran.w, h: pos.h / ukuran.h };
     });
     const hasil = await rekamPemakaian(pemakaian, () =>
       provider.generatePage({
         gaya: gaya.prompt,
+        ukuran,
         karakter,
         referenceImages,
-        panels: panels.map((p, i) => ({ adegan: adegan[i], karakter: p.script_json?.karakter ?? [], rect: rects[i], balon: (p.script_json?.dialog ?? []).filter((d) => d.teks?.trim()).length })),
+        panels: panels.map((p, i) => ({ adegan: adegan[i], karakter: p.script_json?.karakter ?? [], rect: rects[i], balon: (p.script_json?.dialog ?? []).filter((d) => d.teks?.trim()).length, sampul: p.script_json?.sampul === true })),
       }),
     );
 

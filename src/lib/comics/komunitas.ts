@@ -1,5 +1,8 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { UkuranHalaman } from "@/lib/editor/types";
+import type { BahasaId, FilterKomunitas, TemaId } from "./klasifikasi";
+import { ukuranDariBaris } from "@/lib/editor/ukuran-halaman";
 import { adaBerkas, bersihkanRilis, hapusGambar, kunciKomik, urlGambar } from "@/lib/storage/gambar";
 import { kunciHalamanRilis } from "./salinan-publik";
 import {
@@ -22,6 +25,9 @@ export type KomikPublik = {
   penulis: string;
 };
 
+/** Komik di halaman baca: ditambah ukuran kanvas halaman (rasio gambar halaman salinan). */
+export type KomikBaca = KomikPublik & { ukuran: UkuranHalaman };
+
 /** Kartu di daftar komunitas: sampul = gambar halaman pertama dari salinan terbit. */
 export type KartuKomunitas = KomikPublik & { sampul: string | null };
 
@@ -31,7 +37,7 @@ export type KartuKomunitas = KomikPublik & { sampul: string | null };
  * berstatus terbit yang pernah dikembalikan, dan yang dibaca publik hanya salinan tetap (`halaman_publik`),
  * bukan isi editor.
  */
-const KOLOM_PUBLIK = "id, judul, jenjang, deskripsi_publik, diterbitkan_at, user_id, halaman_publik";
+const KOLOM_PUBLIK = "id, judul, jenjang, deskripsi_publik, diterbitkan_at, user_id, halaman_publik, lebar_halaman, tinggi_halaman";
 
 type BarisKomik = {
   id: string;
@@ -41,6 +47,8 @@ type BarisKomik = {
   diterbitkan_at: string | null;
   user_id: string;
   halaman_publik: string[] | null;
+  lebar_halaman?: number | null;
+  tinggi_halaman?: number | null;
 };
 
 async function namaPenulis(admin: SupabaseClient, ids: string[]): Promise<Map<string, string>> {
@@ -63,16 +71,13 @@ const halamanSah = (r: Pick<BarisKomik, "id" | "user_id" | "halaman_publik">): s
   (Array.isArray(r.halaman_publik) ? r.halaman_publik : []).filter((u): u is string => typeof u === "string" && !!kunciKomik(u, r.user_id, r.id));
 
 /** Komik terbit, terbaru dulu. `adaLagi` bila masih ada halaman berikutnya. */
-export async function daftarTerbit(admin: SupabaseClient, halaman: number): Promise<KomunitasResult<{ komik: KartuKomunitas[]; adaLagi: boolean }>> {
+export async function daftarTerbit(admin: SupabaseClient, halaman: number, filter: FilterKomunitas = {}): Promise<KomunitasResult<{ komik: KartuKomunitas[]; adaLagi: boolean }>> {
   const dari = (halaman - 1) * PER_HALAMAN_KOMUNITAS;
-  const { data, error } = await admin
-    .from("comics")
-    .select(KOLOM_PUBLIK)
-    .eq("is_public", true)
-    .eq("status", "terbit")
-    .not("halaman_publik", "is", null)
-    .order("diterbitkan_at", { ascending: false })
-    .range(dari, dari + PER_HALAMAN_KOMUNITAS); // satu baris lebih untuk mengetahui apakah masih ada halaman berikutnya
+  let q = admin.from("comics").select(KOLOM_PUBLIK).eq("is_public", true).eq("status", "terbit").not("halaman_publik", "is", null);
+  if (filter.jenjang !== undefined) q = q.eq("jenjang", filter.jenjang);
+  if (filter.tema) q = q.eq("tema", filter.tema);
+  if (filter.bahasa) q = q.eq("bahasa", filter.bahasa);
+  const { data, error } = await q.order("diterbitkan_at", { ascending: false }).range(dari, dari + PER_HALAMAN_KOMUNITAS); // satu baris lebih untuk mengetahui apakah masih ada halaman berikutnya
   if (error) return { ok: false, error: "Gagal memuat komunitas", status: 500 };
   const baris = (data ?? []) as unknown as BarisKomik[];
   const adaLagi = baris.length > PER_HALAMAN_KOMUNITAS;
@@ -82,18 +87,18 @@ export async function daftarTerbit(admin: SupabaseClient, halaman: number): Prom
 }
 
 /** Satu komik terbit beserta URL gambar halamannya (salinan tetap). null bila tidak ada, sudah ditarik, atau tanpa salinan. */
-export async function bacaKomikPublik(admin: SupabaseClient, id: string): Promise<{ komik: KomikPublik; halaman: string[] } | null> {
+export async function bacaKomikPublik(admin: SupabaseClient, id: string): Promise<{ komik: KomikBaca; halaman: string[] } | null> {
   const { data } = await admin.from("comics").select(KOLOM_PUBLIK).eq("id", id).eq("is_public", true).eq("status", "terbit").maybeSingle();
   if (!data) return null;
   const baris = data as unknown as BarisKomik;
   const halaman = halamanSah(baris);
   if (!halaman.length) return null;
   const penulis = await namaPenulis(admin, [baris.user_id]);
-  return { komik: keKomik(baris, penulis), halaman };
+  return { komik: { ...keKomik(baris, penulis), ukuran: ukuranDariBaris(baris) }, halaman };
 }
 
 /** Status terbit komik milik pengguna (untuk dialog Terbitkan di editor). */
-export type StatusTerbit = { terbit: boolean; deskripsi: string };
+export type StatusTerbit = { terbit: boolean; deskripsi: string; tema?: TemaId | null; bahasa?: BahasaId };
 
 /**
  * Terbitkan komik milik pengguna dari salinan halaman yang baru diunggah (`rilis`). `supabase` = klien pengguna (cek
@@ -103,7 +108,7 @@ export type StatusTerbit = { terbit: boolean; deskripsi: string };
 export async function terbitkanKomik(supabase: SupabaseClient, admin: SupabaseClient, userId: string, comicId: string, input: unknown): Promise<KomunitasResult<StatusTerbit>> {
   const parsed = TerbitSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Isian tidak valid", status: 400 };
-  const { deskripsi, rilis, jumlah } = parsed.data;
+  const { deskripsi, rilis, jumlah, tema, bahasa } = parsed.data;
   const { data: komik } = await supabase.from("comics").select("id, user_id, diterbitkan_at, halaman_publik").eq("id", comicId).maybeSingle();
   if (!komik || komik.user_id !== userId) return { ok: false, error: "Komik tidak ditemukan", status: 404 };
 
@@ -123,6 +128,8 @@ export async function terbitkanKomik(supabase: SupabaseClient, admin: SupabaseCl
       status: "terbit",
       is_public: true,
       deskripsi_publik: deskripsi || null,
+      tema,
+      bahasa,
       halaman_publik: kunci.map((k) => urlGambar(admin, k)),
       diterbitkan_at: komik.diterbitkan_at ?? new Date().toISOString(),
     })
@@ -133,22 +140,26 @@ export async function terbitkanKomik(supabase: SupabaseClient, admin: SupabaseCl
   // salinan lama (dan sisa unggahan yang tidak jadi diterbitkan) dibuang setelah yang baru dipakai
   await bersihkanRilis(admin, userId, comicId, new Set(kunci));
   for (const u of lama) if (kunciKomik(u, userId, comicId)?.includes("/rilis-") === false) await hapusGambar(admin, u);
-  return { ok: true, terbit: true, deskripsi };
+  return { ok: true, terbit: true, deskripsi, tema, bahasa };
 }
 
-/** Ubah deskripsi komik yang sudah terbit. */
+/** Ubah deskripsi, tema, dan bahasa komik yang sudah terbit. */
 export async function perbaruiDeskripsi(admin: SupabaseClient, userId: string, comicId: string, input: unknown): Promise<KomunitasResult<StatusTerbit>> {
   const parsed = PerbaruiDeskripsiSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Isian tidak valid", status: 400 };
   const { data, error } = await admin
     .from("comics")
-    .update({ deskripsi_publik: parsed.data.deskripsi || null })
+    .update({
+      deskripsi_publik: parsed.data.deskripsi || null,
+      ...(parsed.data.tema ? { tema: parsed.data.tema } : {}),
+      ...(parsed.data.bahasa ? { bahasa: parsed.data.bahasa } : {}),
+    })
     .eq("id", comicId)
     .eq("user_id", userId)
     .eq("is_public", true)
-    .select("id");
+    .select("id, tema, bahasa");
   if (error || !data?.length) return { ok: false, error: "Komik belum terbit atau tidak ditemukan", status: 404 };
-  return { ok: true, terbit: true, deskripsi: parsed.data.deskripsi };
+  return { ok: true, terbit: true, deskripsi: parsed.data.deskripsi, tema: (data[0].tema as TemaId | null) ?? null, bahasa: data[0].bahasa as BahasaId };
 }
 
 /**

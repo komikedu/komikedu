@@ -1,6 +1,10 @@
-/** Ukuran halaman dalam unit kanvas (rasio 3:4). Semua koordinat editor memakai unit ini. */
-export const PAGE_W = 900;
-export const PAGE_H = 1200;
+/** Ukuran halaman dalam unit kanvas. Semua koordinat editor memakai unit ini. */
+export type UkuranHalaman = { w: number; h: number };
+
+/** Ukuran bawaan: vertikal 3:4. Ukuran tiap komik dipilih guru (lihat ukuran-halaman.ts) dan disimpan di EditorPage.w/h. */
+export const UKURAN_BAWAAN: UkuranHalaman = { w: 900, h: 1200 };
+export const PAGE_W = UKURAN_BAWAAN.w;
+export const PAGE_H = UKURAN_BAWAAN.h;
 
 export type BubbleKind = "bicara" | "pikir" | "narasi";
 
@@ -34,6 +38,8 @@ export type GayaBalon = {
   warnaStroke?: string;
   /** sudut membulat kotak (mode Kotak), bawaan 4 */
   radius?: number;
+  /** bentuk ekor: lancip (bicara) atau gelembung pikiran; bawaan lancip, kecuali balon pikir dan awan */
+  ekor?: "lancip" | "pikir";
 };
 
 export type Bubble = {
@@ -154,6 +160,9 @@ export type MathElement = ElemenKumpulan | ElemenTeks | ElemenStiker;
 
 export type EditorPage = {
   id: string;
+  /** ukuran kanvas halaman (sama untuk semua halaman satu komik; tersimpan di komik, bukan di halaman) */
+  w: number;
+  h: number;
   layoutId: string;
   panels: Panel[];
   bubbles: Bubble[];

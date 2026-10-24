@@ -30,7 +30,7 @@ export const modeBalon = (b: Pick<Bubble, "kind" | "gaya">): ModeBalon => b.gaya
 export type GayaBalonTerpakai = Required<Omit<GayaBalon, "mode">> & { mode: ModeBalon };
 
 /** Semua pengaturan tampilan sebuah balon dengan nilai bawaan terisi. */
-export function gayaTerpakai(b: Pick<Bubble, "kind" | "gaya">): GayaBalonTerpakai {
+export function gayaTerpakai(b: Pick<Bubble, "kind" | "gaya" | "bentuk">): GayaBalonTerpakai {
   const g = b.gaya ?? {};
   return {
     mode: modeBalon(b),
@@ -48,6 +48,7 @@ export function gayaTerpakai(b: Pick<Bubble, "kind" | "gaya">): GayaBalonTerpaka
     tebalStroke: g.tebalStroke ?? 5,
     warnaStroke: g.warnaStroke ?? "#ffffff",
     radius: g.radius ?? 4,
+    ekor: g.ekor ?? (b.kind === "pikir" || b.bentuk === "awan" ? "pikir" : "lancip"),
   };
 }
 

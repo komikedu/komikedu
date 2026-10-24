@@ -1,3 +1,4 @@
+import { komposisiSampul } from "@/lib/ai/sampul";
 import { ATURAN_TEKS, ruangBalon } from "@/lib/ai/page-prompt";
 import { gambarTokoh, isPresetId, type Tokoh } from "./tokoh";
 
@@ -40,6 +41,8 @@ export type PromptFlowInput = {
   acuan?: Record<string, string>;
   /** jumlah balon dialog di panel; menentukan ruang kosong di bagian atas gambar (kosong = anggap 1-2) */
   balon?: number;
+  /** panel ini sampul komik: komposisi poster dengan ruang judul di atas, bukan adegan cerita */
+  sampul?: boolean;
 };
 
 /**
@@ -58,10 +61,12 @@ export function buatPromptFlow(i: PromptFlowInput): string {
     )
     .join("\n");
   return [
-    `Satu adegan ilustrasi komik edukasi untuk anak SD Indonesia, gaya ${i.gaya}. Gambar penuh satu bingkai (rasio ${i.rasio}), tanpa pembagian panel.`,
-    `Adegan: ${adegan}`,
+    i.sampul
+      ? `Satu ilustrasi SAMPUL komik edukasi untuk anak SD Indonesia, gaya ${i.gaya}. Gambar penuh satu bingkai (rasio ${i.rasio}), tanpa pembagian panel.`
+      : `Satu adegan ilustrasi komik edukasi untuk anak SD Indonesia, gaya ${i.gaya}. Gambar penuh satu bingkai (rasio ${i.rasio}), tanpa pembagian panel.`,
+    `${i.sampul ? "Isi sampul" : "Adegan"}: ${adegan}`,
     chars ? `Tokoh yang tampil (harus terlihat identik di semua panel komik):\n${chars}` : "",
-    ruangBalon(i.balon).trim(),
+    i.sampul ? komposisiSampul().trim() : ruangBalon(i.balon).trim(),
     ATURAN_TEKS + "Konten ramah anak, tanpa kekerasan.",
   ]
     .filter(Boolean)

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { current } from "immer";
 import { immer } from "zustand/middleware/immer";
 import { temporal } from "zundo";
 import { gantiNamaDiTeks, type GantiNama } from "@/lib/comics/tokoh";
@@ -7,8 +8,9 @@ import { createBubble, createKumpulan, createPage, createStiker, createTeks, new
 import { layoutBubbles } from "./from-script";
 import { deletePage, duplicatePage, insertPageAfter } from "./page-ops";
 import { deletePanel, duplicateBubble, duplicateElement, duplicatePanel, movePanel, resetCorners, resizePanel, setCorner, setImageRect, setLatar, splitPanel, type SplitArah } from "./panel-ops";
-import { PAGE_H, PAGE_W } from "./types";
-import type { Bubble, BubbleKind, EditorPage, ElemenKumpulan, ElemenTeks, Latar, MathElement, Panel, Point } from "./types";
+import { skalakanHalaman, ukuranDariHalaman, ukuranValid } from "./ukuran-halaman";
+import type { UkuranHalaman } from "./types";
+import type { Bubble, BubbleKind, EditorPage, ElemenKumpulan, ElemenTeks, GayaBalon, Latar, MathElement, Panel, Point } from "./types";
 
 /** Isi papan klip internal editor: elemen dan balon yang disalin, bisa ditempel di halaman mana pun. */
 export type IsiPapanKlip = { elemen: MathElement[]; balon: Bubble[] };
@@ -47,11 +49,14 @@ type EditorState = {
   setTool: (tool: Tool) => void;
   setZoom: (zoom: number) => void;
   addPage: (layoutId: string) => void;
+  /** Ubah ukuran kanvas seluruh komik; isi semua halaman diskalakan. Satu langkah riwayat. */
+  ubahUkuranHalaman: (ukuran: UkuranHalaman) => void;
   /** Sisipkan halaman kosong, duplikat, atau hapus halaman; halaman baru menjadi aktif. */
   insertPageAfter: (id: string) => void;
   duplicatePage: (id: string) => void;
   deletePage: (id: string) => void;
-  addBubble: (panelId: string, kind: BubbleKind, cx: number, cy: number) => void;
+  /** `gaya` mengatur rupa awal (mis. mode Teks polos untuk alat Teks) */
+  addBubble: (panelId: string, kind: BubbleKind, cx: number, cy: number, gaya?: GayaBalon) => void;
   updateBubble: (id: string, patch: Partial<Omit<Bubble, "id" | "panelId">>) => void;
   deleteBubble: (id: string) => void;
   duplicateBubble: (id: string) => void;
@@ -144,13 +149,13 @@ export const useEditor = create<EditorState>()(
             id: newId(),
             // terikat ke panel hanya bila panel itu ada di halaman ini; selain itu menjadi elemen bebas
             panelId: e.panelId && page.panels.some((p) => p.id === e.panelId) ? e.panelId : null,
-            x: Math.round(batas(e.x + geser, PAGE_W - e.w)),
-            y: Math.round(batas(e.y + geser, PAGE_H - e.h)),
+            x: Math.round(batas(e.x + geser, page.w - e.w)),
+            y: Math.round(batas(e.y + geser, page.h - e.h)),
           }));
           const balonBaru: Bubble[] = [];
           for (const b of isi.balon) {
-            const x = Math.round(batas(b.x + geser, PAGE_W - b.w));
-            const y = Math.round(batas(b.y + geser, PAGE_H - b.h));
+            const x = Math.round(batas(b.x + geser, page.w - b.w));
+            const y = Math.round(batas(b.y + geser, page.h - b.h));
             const panel = page.panels.find((p) => p.id === b.panelId) ?? panelDiTitik(terlihat, { x: x + b.w / 2, y: y + b.h / 2 }) ?? terlihat[0];
             if (panel) balonBaru.push({ ...b, id: newId(), panelId: panel.id, x, y, tail: b.tail ? { ...b.tail } : null });
           }
@@ -204,9 +209,19 @@ export const useEditor = create<EditorState>()(
           s.zoom = Math.min(3, Math.max(0.25, zoom));
         }),
 
+      ubahUkuranHalaman: (ukuran) =>
+        set((s) => {
+          if (!ukuranValid(ukuran)) return;
+          const lama = current(s.pages);
+          const baru = skalakanHalaman(lama, ukuran);
+          if (baru.every((p, i) => p === lama[i])) return;
+          s.pages = baru;
+          s.cornerEdit = null;
+        }),
+
       addPage: (layoutId) =>
         set((s) => {
-          const page = createPage(layoutId);
+          const page = createPage(layoutId, [], ukuranDariHalaman(s.pages));
           s.pages.push(page);
           s.activePageId = page.id;
           s.selectedId = null;
@@ -234,11 +249,12 @@ export const useEditor = create<EditorState>()(
           s.selectedId = null;
         }),
 
-      addBubble: (panelId, kind, cx, cy) =>
+      addBubble: (panelId, kind, cx, cy, gaya) =>
         set((s) => {
           const page = s.pages.find((p) => p.id === s.activePageId);
           if (!page || !page.panels.some((p) => p.id === panelId)) return;
-          const bubble = createBubble(panelId, kind, cx, cy);
+          const bubble = createBubble(panelId, kind, cx, cy, undefined, page);
+          if (gaya) bubble.gaya = { ...gaya };
           page.bubbles.push(bubble);
           s.selectedId = bubble.id;
           s.tool = "move";
@@ -274,7 +290,7 @@ export const useEditor = create<EditorState>()(
         set((s) => {
           const page = s.pages.find((p) => p.id === s.activePageId);
           if (!page || (panelId !== null && !page.panels.some((p) => p.id === panelId))) return;
-          const el = createKumpulan(panelId, cx, cy);
+          const el = createKumpulan(panelId, cx, cy, page);
           page.elements.push(el);
           s.selectedId = el.id;
           s.selectedLayer = "panel";
@@ -285,7 +301,7 @@ export const useEditor = create<EditorState>()(
         set((s) => {
           const page = s.pages.find((p) => p.id === s.activePageId);
           if (!page || (panelId !== null && !page.panels.some((p) => p.id === panelId))) return;
-          const el = createTeks(panelId, cx, cy);
+          const el = createTeks(panelId, cx, cy, undefined, undefined, page);
           page.elements.push(el);
           s.selectedId = el.id;
           s.selectedLayer = "panel";
@@ -296,7 +312,7 @@ export const useEditor = create<EditorState>()(
         set((s) => {
           const page = s.pages.find((p) => p.id === s.activePageId);
           if (!page) return;
-          const el = createStiker(url, rasio);
+          const el = createStiker(url, rasio, undefined, page);
           page.elements.push(el);
           s.selectedId = el.id;
           s.selectedLayer = "panel";

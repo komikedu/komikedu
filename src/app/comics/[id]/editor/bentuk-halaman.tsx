@@ -7,7 +7,7 @@ import { LEBAR_EKOR_BAWAAN, areaTeks, garisGerak, jalurKotak, jalurOval, lingkar
 import { burstTeks, gayaTeks, lapisanLanjut, titikBurst } from "@/lib/editor/gaya-teks";
 import { irisanSinar, jajaranGaris, jariSinar, titikGradasi, titikHalftone } from "@/lib/editor/latar-panel";
 import { layoutKumpulan } from "@/lib/editor/math-elements";
-import { PAGE_H, PAGE_W, type Bubble, type EditorPage, type ElemenStiker, type ElemenTeks, type MathElement, type Panel } from "@/lib/editor/types";
+import { type Bubble, type EditorPage, type ElemenStiker, type ElemenTeks, type MathElement, type Panel } from "@/lib/editor/types";
 import { FONT_GAYA } from "./font-gaya";
 import { IkonBendaView } from "./ikon-benda";
 
@@ -214,7 +214,9 @@ function EkorPikir({ b, g }: { b: Bubble; g: GayaBalonTerpakai }) {
 /** Satu garis tertutup: badan balon dengan ekor yang menyambung langsung di garis tepinya. */
 function JalurBalon({ b, g, poligon, bayangan, runcing }: { b: Bubble; g: GayaBalonTerpakai; poligon: { x: number; y: number }[]; bayangan?: boolean; runcing?: boolean }) {
   const tail = b.tail;
-  const titik = tail ? sisipkanEkor(poligon, { x: b.w / 2, y: b.h / 2 }, { x: b.w / 2 + tail.dx, y: b.h / 2 + tail.dy }, tail.lebar ?? LEBAR_EKOR_BAWAAN) : poligon;
+  const pikir = g.ekor === "pikir";
+  // ekor lancip menyambung di garis tepi; ekor pikiran berupa dua gelembung terpisah di luar badan
+  const titik = tail && !pikir ? sisipkanEkor(poligon, { x: b.w / 2, y: b.h / 2 }, { x: b.w / 2 + tail.dx, y: b.h / 2 + tail.dy }, tail.lebar ?? LEBAR_EKOR_BAWAAN) : poligon;
   const datar = titik.flatMap((t) => [t.x, t.y]);
   return (
     <>
@@ -228,6 +230,7 @@ function JalurBalon({ b, g, poligon, bayangan, runcing }: { b: Bubble; g: GayaBa
         lineJoin={runcing ? "miter" : "round"}
         miterLimit={6}
       />
+      {pikir && <EkorPikir b={b} g={g} />}
     </>
   );
 }
@@ -350,7 +353,7 @@ export function IsiBalon({ b, fontFamily }: { b: Bubble; fontFamily: string }) {
 export function HalamanStatis({ page, gambar, fontFamily }: { page: EditorPage; gambar: Map<string, HTMLImageElement>; fontFamily: string }) {
   return (
     <>
-      <Rect width={PAGE_W} height={PAGE_H} fill="#ffffff" />
+      <Rect width={page.w} height={page.h} fill="#ffffff" />
       {page.panels
         .filter((p) => p.visible)
         .map((p) => {

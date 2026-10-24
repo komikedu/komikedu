@@ -3,7 +3,8 @@ import { getLayout, isLayoutId } from "@/lib/ai/layouts";
 import { ScriptSchema } from "@/lib/ai/schemas";
 
 export const NASKAH_COST = 2;
-export const MAX_NASKAH_PAGES = 12;
+/** 12 halaman isi ditambah satu halaman sampul. */
+export const MAX_NASKAH_PAGES = 13;
 
 /** Batas tambahan saat guru mengedit naskah, di atas skema keluaran AI. */
 export const NaskahEditSchema = ScriptSchema.superRefine((s, ctx) => {

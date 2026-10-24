@@ -1,5 +1,6 @@
 "use client";
 
+import { Dropdown } from "@/components/dropdown";
 import { useEffect, useRef, useState } from "react";
 import { aturanUkuran, cssLatar, gantiJenisLatar, JENIS_LATAR, pakaiSudut, PRESET_LATAR } from "@/lib/editor/latar-panel";
 import { useEditor } from "@/lib/editor/store";
@@ -65,7 +66,7 @@ export function LatarSection({ panelId, latar }: { panelId: string; latar: Latar
         <div className="mt-3 space-y-2.5 rounded-lg border border-line p-3 text-xs">
           <label className="block">
             <span className="text-gray-600">Jenis pola</span>
-            <select
+            <Dropdown
               value={draft.jenis}
               onChange={(e) => segera(gantiJenisLatar(draft, e.target.value as JenisLatar))}
               className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1.5"
@@ -75,7 +76,7 @@ export function LatarSection({ panelId, latar }: { panelId: string; latar: Latar
                   {j.nama}
                 </option>
               ))}
-            </select>
+            </Dropdown>
           </label>
           <div className="flex gap-3">
             <label className="flex items-center gap-2">

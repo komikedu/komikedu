@@ -1,5 +1,5 @@
 import { newId } from "./factory";
-import { PAGE_H, PAGE_W, type Bubble, type EditorPage, type Latar, type Panel, type Point } from "./types";
+import { type Bubble, type EditorPage, type Latar, type Panel, type Point } from "./types";
 
 /**
  * Operasi panel di editor. Semua fungsi MENGUBAH halaman di tempat (cocok dengan draft immer di store)
@@ -53,8 +53,8 @@ export function duplicatePanel(page: EditorPage, panelId: string): string | null
   const idx = page.panels.findIndex((p) => p.id === panelId);
   if (idx < 0 || page.panels.length >= MAX_PANELS_PER_PAGE) return null;
   const p = page.panels[idx];
-  const x = clamp(p.x + OFFSET, 0, PAGE_W - p.w);
-  const y = clamp(p.y + OFFSET, 0, PAGE_H - p.h);
+  const x = clamp(p.x + OFFSET, 0, page.w - p.w);
+  const y = clamp(p.y + OFFSET, 0, page.h - p.h);
   const dx = x - p.x;
   const dy = y - p.y;
   const salinan: Panel = {
@@ -88,8 +88,8 @@ export function deletePanel(page: EditorPage, panelId: string): boolean {
 export function movePanel(page: EditorPage, panelId: string, dx: number, dy: number): boolean {
   const p = page.panels.find((x) => x.id === panelId);
   if (!p) return false;
-  const nx = clamp(Math.round(p.x + dx), 0, PAGE_W - p.w);
-  const ny = clamp(Math.round(p.y + dy), 0, PAGE_H - p.h);
+  const nx = clamp(Math.round(p.x + dx), 0, page.w - p.w);
+  const ny = clamp(Math.round(p.y + dy), 0, page.h - p.h);
   const ax = nx - p.x;
   const ay = ny - p.y;
   if (!ax && !ay) return false;
@@ -111,12 +111,12 @@ export function resizePanel(page: EditorPage, panelId: string, r: { x: number; y
   const p = page.panels.find((x) => x.id === panelId);
   if (!p) return false;
   const lama = { x: p.x, y: p.y, w: p.w, h: p.h };
-  const x = clamp(Math.round(r.x), 0, PAGE_W - MIN_PANEL);
-  const y = clamp(Math.round(r.y), 0, PAGE_H - MIN_PANEL);
+  const x = clamp(Math.round(r.x), 0, page.w - MIN_PANEL);
+  const y = clamp(Math.round(r.y), 0, page.h - MIN_PANEL);
   p.x = x;
   p.y = y;
-  p.w = clamp(Math.round(r.w), MIN_PANEL, PAGE_W - x);
-  p.h = clamp(Math.round(r.h), MIN_PANEL, PAGE_H - y);
+  p.w = clamp(Math.round(r.w), MIN_PANEL, page.w - x);
+  p.h = clamp(Math.round(r.h), MIN_PANEL, page.h - y);
   if (p.corners) {
     const sx = p.w / (lama.w || 1);
     const sy = p.h / (lama.h || 1);
@@ -132,8 +132,8 @@ export function duplicateBubble(page: EditorPage, bubbleId: string): string | nu
   const salinan: Bubble = {
     ...b,
     id: newId(),
-    x: clamp(b.x + OFFSET, 0, PAGE_W - b.w),
-    y: clamp(b.y + OFFSET, 0, PAGE_H - b.h),
+    x: clamp(b.x + OFFSET, 0, page.w - b.w),
+    y: clamp(b.y + OFFSET, 0, page.h - b.h),
     tail: b.tail ? { ...b.tail } : null,
   };
   page.bubbles.push(salinan);
@@ -191,7 +191,7 @@ export function setCorner(page: EditorPage, panelId: string, index: number, pt: 
   const p = page.panels.find((x) => x.id === panelId);
   if (!p || index < 0 || index > 3) return false;
   const c = panelCorners(p).map((q) => ({ ...q }));
-  c[index] = { x: clamp(Math.round(pt.x), 0, PAGE_W), y: clamp(Math.round(pt.y), 0, PAGE_H) };
+  c[index] = { x: clamp(Math.round(pt.x), 0, page.w), y: clamp(Math.round(pt.y), 0, page.h) };
   const b = bbox(c);
   if (!isConvexQuad(c) || b.w < MIN_PANEL || b.h < MIN_PANEL) return false;
   applyCorners(p, c);
@@ -227,9 +227,9 @@ export function setImageRect(page: EditorPage, panelId: string, r: { x: number; 
     p.imageRect = null;
     return true;
   }
-  const w = clamp(Math.round(r.w), MIN_IMAGE, PAGE_W * 3);
-  const h = clamp(Math.round(r.h), MIN_IMAGE, PAGE_H * 3);
-  p.imageRect = { x: clamp(Math.round(r.x), -PAGE_W, PAGE_W * 2), y: clamp(Math.round(r.y), -PAGE_H, PAGE_H * 2), w, h };
+  const w = clamp(Math.round(r.w), MIN_IMAGE, page.w * 3);
+  const h = clamp(Math.round(r.h), MIN_IMAGE, page.h * 3);
+  p.imageRect = { x: clamp(Math.round(r.x), -page.w, page.w * 2), y: clamp(Math.round(r.y), -page.h, page.h * 2), w, h };
   return true;
 }
 
@@ -245,7 +245,7 @@ export function setLatar(page: EditorPage, panelId: string, latar: Latar | null)
 export function duplicateElement(page: EditorPage, elementId: string): string | null {
   const e = page.elements.find((x) => x.id === elementId);
   if (!e) return null;
-  const salinan = { ...e, id: newId(), x: clamp(e.x + OFFSET, 0, PAGE_W - e.w), y: clamp(e.y + OFFSET, 0, PAGE_H - e.h) };
+  const salinan = { ...e, id: newId(), x: clamp(e.x + OFFSET, 0, page.w - e.w), y: clamp(e.y + OFFSET, 0, page.h - e.h) };
   page.elements.push(salinan);
   return salinan.id;
 }

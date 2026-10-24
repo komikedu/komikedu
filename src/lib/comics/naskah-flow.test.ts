@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Script } from "@/lib/ai/schemas";
-import { barisDialog, buatNaskahFlow, teksNaskah } from "./naskah-flow";
+import { createPage } from "@/lib/editor/factory";
+import { barisDialog, buatFlowDariHalaman, buatNaskahFlow, teksNaskah, teksPromptPanel } from "./naskah-flow";
 import type { Tokoh } from "./tokoh";
 
 const doni: Tokoh = { id: "doni", nama: "Doni", peran: "Murid", deskripsi: "anak laki-laki berkacamata", preset: true };
@@ -31,6 +32,10 @@ describe("buatNaskahFlow", () => {
       [1, 1, 1],
       [2, 2, 1],
     ]);
+  });
+  it("tiap panel punya nama berkas halaman-panel dan petunjuk menyebutnya", () => {
+    expect(j.panel.map((p) => p.nama_berkas)).toEqual(["1-1", "2-1"]);
+    expect(j.petunjuk).toContain("nama_berkas");
   });
   it("tiap prompt berdiri sendiri: gaya, adegan, dan tokoh yang muncul", () => {
     expect(j.panel[0].prompt).toContain("faceless");
@@ -81,5 +86,23 @@ describe("teksNaskah", () => {
 describe("barisDialog", () => {
   it("nama kosong tetap menghasilkan baris", () => {
     expect(barisDialog({ karakter: " ", jenis: "bicara", teks: "Hai" })).toBe("?: Hai");
+  });
+});
+
+describe("buatFlowDariHalaman dan teksPromptPanel", () => {
+  const halaman = [createPage("2-atas-bawah", ["Doni berdiri di taman.", "  "]), createPage("1-penuh", ["Sari melambai."])];
+
+  it("memberi nama berkas halaman-panel, melewati panel tanpa adegan, dan menyebut tokoh yang muncul", () => {
+    const flow = buatFlowDariHalaman({ judul: "Komik", gaya: "kartun-cerah", tokoh: [doni], halaman });
+    expect(flow.panel.map((p) => p.nama_berkas)).toEqual(["1-1", "2-1"]);
+    expect(flow.panel[0].prompt).toContain("Doni");
+    expect(flow.panel[1].prompt).not.toContain("Doni");
+    expect(flow.panel.every((p) => p.rasio.includes(":"))).toBe(true);
+  });
+
+  it("teks prompt memuat semua panel dengan nama berkasnya", () => {
+    const teks = teksPromptPanel(buatFlowDariHalaman({ judul: "K", gaya: null, tokoh: [], halaman }));
+    expect(teks).toContain("[1-1] Rasio");
+    expect(teks).toContain("[2-1] Rasio");
   });
 });

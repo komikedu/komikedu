@@ -1,6 +1,6 @@
 import { getLayout } from "@/lib/ai/layouts";
 import { gayaTeks } from "./gaya-teks";
-import { PAGE_H, PAGE_W, type Bubble, type BubbleKind, type EditorPage, type ElemenKumpulan, type ElemenStiker, type ElemenTeks, type Panel } from "./types";
+import { UKURAN_BAWAAN, type Bubble, type BubbleKind, type EditorPage, type ElemenKumpulan, type ElemenStiker, type ElemenTeks, type Panel, type UkuranHalaman } from "./types";
 
 /** UUID agar id bisa langsung dipakai sebagai primary key di database. */
 export const newId = () => crypto.randomUUID();
@@ -9,10 +9,10 @@ export const newId = () => crypto.randomUUID();
 export const PAGE_MARGIN = 54;
 
 /** Buat halaman kosong dari template layout (koordinat template 0-1 dipetakan ke area dalam margin). */
-export function createPage(layoutId: string, adegan: string[] = []): EditorPage {
+export function createPage(layoutId: string, adegan: string[] = [], ukuran: UkuranHalaman = UKURAN_BAWAAN): EditorPage {
   const layout = getLayout(layoutId);
-  const innerW = PAGE_W - PAGE_MARGIN * 2;
-  const innerH = PAGE_H - PAGE_MARGIN * 2;
+  const innerW = ukuran.w - PAGE_MARGIN * 2;
+  const innerH = ukuran.h - PAGE_MARGIN * 2;
   const panels: Panel[] = layout.panels.map((r, i) => ({
     id: newId(),
     x: Math.round(PAGE_MARGIN + r.x * innerW),
@@ -23,7 +23,7 @@ export function createPage(layoutId: string, adegan: string[] = []): EditorPage 
     visible: true,
     adegan: adegan[i] ?? "",
   }));
-  return { id: newId(), layoutId, panels, bubbles: [], elements: [] };
+  return { id: newId(), w: ukuran.w, h: ukuran.h, layoutId, panels, bubbles: [], elements: [] };
 }
 
 const DEFAULT_SIZE: Record<BubbleKind, { w: number; h: number }> = {
@@ -33,15 +33,15 @@ const DEFAULT_SIZE: Record<BubbleKind, { w: number; h: number }> = {
 };
 
 /** Balon baru di tengah titik (cx, cy), dijepit agar tetap di dalam halaman. */
-export function createBubble(panelId: string, kind: BubbleKind, cx: number, cy: number, text = "Teks baru"): Bubble {
+export function createBubble(panelId: string, kind: BubbleKind, cx: number, cy: number, text = "Teks baru", ukuran: UkuranHalaman = UKURAN_BAWAAN): Bubble {
   const { w, h } = DEFAULT_SIZE[kind];
   return {
     id: newId(),
     panelId,
     kind,
     text,
-    x: Math.min(Math.max(cx - w / 2, 0), PAGE_W - w),
-    y: Math.min(Math.max(cy - h / 2, 0), PAGE_H - h),
+    x: Math.min(Math.max(cx - w / 2, 0), ukuran.w - w),
+    y: Math.min(Math.max(cy - h / 2, 0), ukuran.h - h),
     w,
     h,
     tail: kind === "narasi" ? null : { dx: 20, dy: h / 2 + 40 },
@@ -51,15 +51,15 @@ export function createBubble(panelId: string, kind: BubbleKind, cx: number, cy: 
 }
 
 /** Elemen "kumpulan benda" baru di titik (cx, cy): bawaan 10 apel, 5 per baris. */
-export function createKumpulan(panelId: string | null, cx: number, cy: number): ElemenKumpulan {
+export function createKumpulan(panelId: string | null, cx: number, cy: number, ukuran: UkuranHalaman = UKURAN_BAWAAN): ElemenKumpulan {
   const w = 300;
   const h = 120;
   return {
     id: newId(),
     panelId,
     kind: "kumpulan",
-    x: Math.round(Math.min(Math.max(cx - w / 2, 0), PAGE_W - w)),
-    y: Math.round(Math.min(Math.max(cy - h / 2, 0), PAGE_H - h)),
+    x: Math.round(Math.min(Math.max(cx - w / 2, 0), ukuran.w - w)),
+    y: Math.round(Math.min(Math.max(cy - h / 2, 0), ukuran.h - h)),
     w,
     h,
     ikon: "apel",
@@ -70,7 +70,7 @@ export function createKumpulan(panelId: string | null, cx: number, cy: number): 
 }
 
 /** Teks bergaya baru di titik (cx, cy): bawaan efek suara "BUM!" bergaya ledakan. */
-export function createTeks(panelId: string | null, cx: number, cy: number, gayaId = "sfx-ledak", text = "BUM!"): ElemenTeks {
+export function createTeks(panelId: string | null, cx: number, cy: number, gayaId = "sfx-ledak", text = "BUM!", ukuran: UkuranHalaman = UKURAN_BAWAAN): ElemenTeks {
   const g = gayaTeks(gayaId);
   const w = g.kotak?.w ?? 360;
   const h = g.kotak?.h ?? 170;
@@ -78,8 +78,8 @@ export function createTeks(panelId: string | null, cx: number, cy: number, gayaI
     id: newId(),
     panelId,
     kind: "teks",
-    x: Math.round(Math.min(Math.max(cx - w / 2, 0), PAGE_W - w)),
-    y: Math.round(Math.min(Math.max(cy - h / 2, 0), PAGE_H - h)),
+    x: Math.round(Math.min(Math.max(cx - w / 2, 0), ukuran.w - w)),
+    y: Math.round(Math.min(Math.max(cy - h / 2, 0), ukuran.h - h)),
     w,
     h,
     text,
@@ -90,7 +90,7 @@ export function createTeks(panelId: string | null, cx: number, cy: number, gayaI
 }
 
 /** Stiker baru di tengah halaman; sisi terpanjangnya `sisi` unit dan rasio gambar (lebar / tinggi) dipertahankan. */
-export function createStiker(url: string, rasio: number, sisi = 420): ElemenStiker {
+export function createStiker(url: string, rasio: number, sisi = 420, ukuran: UkuranHalaman = UKURAN_BAWAAN): ElemenStiker {
   const r = Number.isFinite(rasio) && rasio > 0 ? rasio : 1;
   const w = Math.round(r >= 1 ? sisi : sisi * r);
   const h = Math.round(r >= 1 ? sisi / r : sisi);
@@ -98,8 +98,8 @@ export function createStiker(url: string, rasio: number, sisi = 420): ElemenStik
     id: newId(),
     panelId: null,
     kind: "stiker",
-    x: Math.round((PAGE_W - w) / 2),
-    y: Math.round((PAGE_H - h) / 2),
+    x: Math.round((ukuran.w - w) / 2),
+    y: Math.round((ukuran.h - h) / 2),
     w: Math.max(40, w),
     h: Math.max(40, h),
     url,

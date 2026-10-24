@@ -23,7 +23,7 @@ const hasil = <T extends object>(r: ({ ok: true } & T) | { ok: false; error: str
  * Terbitkan komik ke komunitas dari salinan halaman yang baru diunggah (`rilis`, `jumlah` halaman). `setuju` (pernyataan
  * hak cipta) wajib true.
  */
-export async function terbitkanAksi(comicId: string, input: { deskripsi: string; setuju: boolean; rilis: string; jumlah: number }): Promise<AksiHasil<StatusTerbit>> {
+export async function terbitkanAksi(comicId: string, input: { deskripsi: string; setuju: boolean; rilis: string; jumlah: number; tema?: string; bahasa?: string }): Promise<AksiHasil<StatusTerbit>> {
   if (!IdSchema.safeParse(comicId).success) return { ok: false, error: "Komik tidak ditemukan" };
   const p = await pengguna();
   if (!p) return { ok: false, error: "Sesi berakhir, silakan masuk lagi" };
@@ -36,11 +36,11 @@ export async function terbitkanAksi(comicId: string, input: { deskripsi: string;
   return hasil(res);
 }
 
-export async function perbaruiDeskripsiAksi(comicId: string, deskripsi: string): Promise<AksiHasil<StatusTerbit>> {
+export async function perbaruiDeskripsiAksi(comicId: string, deskripsi: string, tema?: string, bahasa?: string): Promise<AksiHasil<StatusTerbit>> {
   if (!IdSchema.safeParse(comicId).success) return { ok: false, error: "Komik tidak ditemukan" };
   const p = await pengguna();
   if (!p) return { ok: false, error: "Sesi berakhir, silakan masuk lagi" };
-  const res = await perbaruiDeskripsi(createAdminClient(), p.user.id, comicId, { deskripsi });
+  const res = await perbaruiDeskripsi(createAdminClient(), p.user.id, comicId, { deskripsi, tema, bahasa });
   if (res.ok) {
     revalidatePath("/komunitas");
     revalidatePath(`/baca/${comicId}`);

@@ -5,6 +5,7 @@ import { ChevronLeft, Download } from "lucide-react";
 import { PublicHeader } from "@/components/public-header";
 import { bacaKomikPublik } from "@/lib/comics/komunitas";
 import { waktuRelatif } from "@/lib/comics/status";
+import { ukuranRender } from "@/lib/editor/ukuran-halaman";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { LaporDialog } from "./lapor-dialog";
 
@@ -73,15 +74,12 @@ export default async function BacaPage({ params }: { params: Promise<{ id: strin
               <img
                 src={url}
                 alt={`Halaman ${i + 1} dari ${halaman.length}`}
-                width={1350}
-                height={1800}
+                width={ukuranRender(komik.ukuran).lebar}
+                height={ukuranRender(komik.ukuran).tinggi}
                 loading={i === 0 ? "eager" : "lazy"}
                 decoding="async"
                 className="h-auto w-full rounded-lg bg-white shadow ring-1 ring-black/10"
               />
-              <p className="mt-1.5 text-center text-xs text-gray-500">
-                Halaman {i + 1} dari {halaman.length}
-              </p>
             </li>
           ))}
         </ol>

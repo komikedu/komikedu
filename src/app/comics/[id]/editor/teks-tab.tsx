@@ -5,6 +5,7 @@ import { ADA_LANJUT, FONT_MAX, FONT_MIN, GAYA_TEKS, MAKS_TEKS, bawaanLanjut, bur
 import { useEditor } from "@/lib/editor/store";
 import type { ElemenStiker, ElemenTeks, MathElement } from "@/lib/editor/types";
 import { FONT_GAYA } from "./font-gaya";
+import { Saklar } from "./saklar";
 
 /** Geser sudut putar elemen (derajat), dengan tombol kembali ke tegak. */
 export function Putaran({ el }: { el: MathElement }) {
@@ -32,15 +33,12 @@ export function IkatPanel({ el }: { el: MathElement }) {
   const ikat = useEditor((s) => s.ikatElemen);
   const bebas = el.panelId === null;
   return (
-    <div>
-      <label className="flex items-center gap-2">
-        <input type="checkbox" checked={bebas} onChange={(e) => ikat(el.id, e.target.checked)} className="h-4 w-4 accent-violet-600" />
-        <span className="font-semibold">Bebas di halaman</span>
-      </label>
-      <p className="mt-1 text-xs text-gray-500">
-        {bebas ? "Tidak ikut pindah atau terhapus bersama panel. Hilangkan centang untuk mengikat ke panel di bawahnya." : "Ikut pindah, tersalin, dan terhapus bersama panelnya. Centang agar bisa ditaruh di mana saja, mis. judul di atas halaman."}
-      </p>
-    </div>
+    <Saklar
+      keterangan="Bebas di halaman"
+      aktif={bebas}
+      onUbah={(v) => ikat(el.id, v)}
+      deskripsi={bebas ? "Tidak ikut pindah atau terhapus bersama panel. Matikan untuk mengikat ke panel di bawahnya." : "Ikut pindah, tersalin, dan terhapus bersama panelnya. Nyalakan agar bisa ditaruh di mana saja, mis. judul di atas halaman."}
+    />
   );
 }
 
@@ -127,10 +125,7 @@ export function TeksTab({ el }: { el: ElemenTeks }) {
         )}
       </div>
       <PengaturanLanjut el={el} />
-      <label className="flex items-center gap-2">
-        <input type="checkbox" checked={!!burstTeks(el)} onChange={(e) => update(el.id, { latarBurst: e.target.checked })} className="h-4 w-4 accent-violet-600" />
-        <span className="font-semibold">Latar burst</span>
-      </label>
+      <Saklar keterangan="Latar burst" aktif={!!burstTeks(el)} onUbah={(v) => update(el.id, { latarBurst: v })} />
       <Putaran el={el} />
       <IkatPanel el={el} />
       <button type="button" onClick={() => del(el.id)} className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-danger hover:bg-surface-muted">

@@ -1,6 +1,8 @@
 import "server-only";
 import { GoogleGenAI } from "@google/genai";
 import type { ImageProvider, PageImageRequest, PageImageResult, PanelEditRequest, PortraitRequest } from "./image-provider";
+import { UKURAN_BAWAAN } from "@/lib/editor/types";
+import { rasioAi } from "@/lib/editor/ukuran-halaman";
 import { buildEditPrompt, buildPagePrompt, buildPortraitPrompt } from "./page-prompt";
 import { catatPemakaian } from "./usage";
 
@@ -28,7 +30,7 @@ export class GeminiImageProvider implements ImageProvider {
         inlineData: { data: Buffer.from(r.data).toString("base64"), mimeType: r.mimeType },
       })),
     ];
-    return this.request(req.premium ? IMAGE_MODEL_PREMIUM : IMAGE_MODEL, parts, { aspectRatio: "3:4" });
+    return this.request(req.premium ? IMAGE_MODEL_PREMIUM : IMAGE_MODEL, parts, { aspectRatio: rasioAi(req.ukuran ?? UKURAN_BAWAAN) });
   }
 
   /** Ubah gambar satu panel; rasio mengikuti gambar asli (tanpa imageConfig). */

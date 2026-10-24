@@ -6,11 +6,9 @@ import { createRoot } from "react-dom/client";
 import type Konva from "konva";
 import { Layer, Stage } from "react-konva";
 import { buatPdf } from "@/lib/editor/ekspor-pdf";
-import { PAGE_H, PAGE_W, type EditorPage } from "@/lib/editor/types";
+import type { EditorPage } from "@/lib/editor/types";
+import { ukuranRender } from "@/lib/editor/ukuran-halaman";
 import { HalamanStatis } from "./bentuk-halaman";
-
-/** Skala render: 1,5 kali ukuran kanvas (1350 x 1800 px) cukup tajam untuk dibaca dan dicetak tanpa membuat PDF terlalu besar. */
-const PIXEL_RATIO = 1.5;
 
 /** Muat semua gambar halaman dengan CORS aktif (wajib agar kanvas boleh diekspor). Gagal bila ada yang tidak bisa dimuat. */
 export async function muatGambar(urls: string[]): Promise<Map<string, HTMLImageElement>> {
@@ -44,7 +42,7 @@ function base64KeBytes(dataUrl: string): Uint8Array {
 async function renderJpeg(page: EditorPage, gambar: Map<string, HTMLImageElement>, fontFamily: string): Promise<Uint8Array> {
   const host = document.createElement("div");
   host.setAttribute("aria-hidden", "true");
-  host.style.cssText = `position:fixed;left:-99999px;top:0;width:${PAGE_W}px;height:${PAGE_H}px;pointer-events:none`;
+  host.style.cssText = `position:fixed;left:-99999px;top:0;width:${page.w}px;height:${page.h}px;pointer-events:none`;
   document.body.appendChild(host);
   const root = createRoot(host);
   let stage: Konva.Stage | null = null;
@@ -52,8 +50,8 @@ async function renderJpeg(page: EditorPage, gambar: Map<string, HTMLImageElement
     flushSync(() =>
       root.render(
         <Stage
-          width={PAGE_W}
-          height={PAGE_H}
+          width={page.w}
+          height={page.h}
           ref={(s) => {
             stage = s;
           }}
@@ -65,7 +63,7 @@ async function renderJpeg(page: EditorPage, gambar: Map<string, HTMLImageElement
       ),
     );
     if (!stage) throw new Error("Kanvas ekspor gagal dibuat");
-    return base64KeBytes((stage as Konva.Stage).toDataURL({ pixelRatio: PIXEL_RATIO, mimeType: "image/jpeg", quality: 0.92 }));
+    return base64KeBytes((stage as Konva.Stage).toDataURL({ pixelRatio: ukuranRender(page).skala, mimeType: "image/jpeg", quality: 0.92 }));
   } finally {
     root.unmount();
     host.remove();

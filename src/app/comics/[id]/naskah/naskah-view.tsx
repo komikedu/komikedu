@@ -1,9 +1,11 @@
 "use client";
 
+import { Dropdown } from "@/components/dropdown";
+import { DialogKonfirmasi } from "@/components/dialog-konfirmasi";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { AlertTriangle, CheckCircle2, Copy, Loader2, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Loader2, PenLine, Plus, Settings2, Trash2, X } from "lucide-react";
 import { LAYOUTS } from "@/lib/ai/layouts";
 import { MAX_BALLOON_WORDS, flagMemblokir, type Flag, type Script } from "@/lib/ai/schemas";
 import {
@@ -24,6 +26,7 @@ import { NASKAH_COST } from "@/lib/comics/naskah-edit";
 import { buatNaskahFlow, teksNaskah } from "@/lib/comics/naskah-flow";
 import { GAYA } from "@/lib/comics/schema";
 import type { Tokoh } from "@/lib/comics/tokoh";
+import type { UkuranHalaman } from "@/lib/editor/types";
 import { approveNaskah, generateNaskah, saveNaskah } from "./actions";
 
 export type NaskahStatus = "none" | "generating" | "review" | "approved" | "error";
@@ -31,8 +34,10 @@ export type NaskahStatus = "none" | "generating" | "review" | "approved" | "erro
 type Props = {
   comicId: string;
   judul: string;
-  ringkasan: { topik: string | null; jenjang: number; jumlahHalaman: number; gaya: string | null; adaMateri: boolean };
+  ringkasan: { topik: string | null; jenjang: number; jumlahHalaman: number; halamanOtomatis: boolean; sumber: string; gaya: string | null; adaMateri: boolean };
   status: NaskahStatus;
+  /** Pengaturan komik di wizard berubah sesudah naskah ini ditulis. */
+  pengaturanBerubah?: boolean;
   naskah: Script | null;
   flags: Flag[];
   /** Berubah setiap kali naskah dibuat ulang; dipakai untuk mereset suntingan lokal. */
@@ -41,6 +46,8 @@ type Props = {
   adaHalamanEditor: boolean;
   /** Tokoh komik, untuk deskripsi tokoh di prompt Flow */
   tokoh?: Tokoh[];
+  /** Ukuran kanvas halaman komik, untuk rasio gambar di prompt Flow (kosong = vertikal 3:4) */
+  ukuran?: UkuranHalaman;
   /** Fungsi simpan naskah; bisa diganti untuk halaman pratinjau tanpa login. */
   simpanNaskah?: typeof saveNaskah;
 };
@@ -49,6 +56,9 @@ const JENIS_LABEL = { bicara: "Bicara", pikir: "Pikir", narasi: "Narasi" } as co
 const wordCount = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 
 /** Thumbnail layout halaman (digambar dari koordinat template), seperti pemilih layout di referensi. */
+/** Kolom isian gaya Notion: tanpa garis saat diam, garis muncul saat disorot atau diisi. */
+const FIELD = "resize-none rounded-md border border-transparent bg-transparent px-2 py-1 text-sm hover:border-line focus:border-brand/60 focus:bg-white focus:outline-none";
+
 function LayoutThumb({ id, aktif, onClick }: { id: string; aktif: boolean; onClick: () => void }) {
   const l = LAYOUTS.find((x) => x.id === id)!;
   return (
@@ -131,13 +141,13 @@ function Generating() {
  */
 function BacaNaskah({ halaman, flags, keEdit }: { halaman: Script["halaman"]; flags: Flag[]; keEdit: () => void }) {
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-12">
       {halaman.map((h) => (
         <section key={h.urutan} aria-label={`Halaman ${h.urutan}`}>
-          <h2 className="border-b border-line pb-2 text-sm font-bold uppercase tracking-widest text-gray-500">
-            Halaman {h.urutan} <span className="font-normal normal-case tracking-normal">· {h.panel.length} panel</span>
+          <h2 className="text-xl font-bold text-gray-900">
+            {h.sampul ? "Sampul" : `Halaman ${h.urutan}`} <span className="text-sm font-normal text-gray-400">· {h.panel.length} panel</span>
           </h2>
-          <div className="mt-4 flex flex-col gap-6">
+          <div className="mt-5 flex flex-col gap-7">
             {[...h.panel]
               .sort((a, b) => a.urutan - b.urutan)
               .map((p) => {
@@ -153,8 +163,8 @@ function BacaNaskah({ halaman, flags, keEdit }: { halaman: Script["halaman"]; fl
                         {p.adegan.trim() || <span className="not-italic text-amber-700">Adegan belum diisi.</span>}
                       </p>
                       {p.dialog.map((d, i) => (
-                        <div key={i} className={d.jenis === "narasi" ? "rounded bg-surface-muted px-3 py-2" : "border-l-2 border-line pl-3"}>
-                          <p className="text-xs font-bold uppercase tracking-wide text-gray-700">
+                        <div key={i} className={d.jenis === "narasi" ? "border-l-2 border-transparent pl-3" : "border-l-2 border-line pl-3"}>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
                             {d.jenis === "narasi" ? "Narasi" : d.karakter || "?"}
                             {d.jenis === "pikir" && <span className="ml-1 font-normal normal-case tracking-normal text-gray-500">(berpikir)</span>}
                           </p>
@@ -186,20 +196,24 @@ function Review({
   judul,
   gayaId,
   tokoh,
+  ukuran,
   naskahAwal,
   flagsAwal,
   adaHalamanEditor,
   saldo,
+  pengaturanBerubah = false,
   simpanNaskah = saveNaskah,
 }: {
   comicId: string;
   judul: string;
   gayaId: string | null;
   tokoh: Tokoh[];
+  ukuran?: UkuranHalaman;
   naskahAwal: Script;
   flagsAwal: Flag[];
   adaHalamanEditor: boolean;
   saldo: number;
+  pengaturanBerubah?: boolean;
   simpanNaskah?: typeof saveNaskah;
 }) {
   const router = useRouter();
@@ -210,6 +224,19 @@ function Review({
   const [simpan, setSimpan] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
   const [pesan, setPesan] = useState<string | null>(null);
   const [approving, startApprove] = useTransition();
+  const [menulisUlang, startMenulisUlang] = useTransition();
+  const [konfirmasiUlang, setKonfirmasiUlang] = useState(false);
+  const kurangKredit = saldo < NASKAH_COST;
+
+  /** Tulis ulang naskah dari awal memakai pengaturan wizard yang sekarang (mis. jumlah halaman yang baru diubah). */
+  function tulisUlang() {
+    setKonfirmasiUlang(false);
+    startMenulisUlang(async () => {
+      const res = await generateNaskah(comicId);
+      if (!res.ok) setPesan(res.error);
+      router.refresh();
+    });
+  }
   const dirty = useRef(false);
 
   useEffect(() => {
@@ -266,7 +293,7 @@ function Review({
   }
 
   const salinJsonFlow = () => {
-    const json = buatNaskahFlow({ judul, gaya: gayaId, tokoh, naskah });
+    const json = buatNaskahFlow({ judul, gaya: gayaId, tokoh, naskah, ukuran });
     if (json.panel.length === 0) return setSalin({ ok: false, teks: "Belum ada panel beradegan yang bisa disalin." });
     void salinKe(JSON.stringify(json, null, 2), `JSON ${json.panel.length} panel disalin. Tempel di Google Flow.`);
   };
@@ -343,8 +370,33 @@ function Review({
           >
             <Copy size={14} /> Salin JSON untuk Flow
           </button>
+          <button
+            type="button"
+            disabled={menulisUlang || kurangKredit}
+            title={kurangKredit ? `Kredit tidak cukup, butuh ${NASKAH_COST}` : undefined}
+            onClick={() => setKonfirmasiUlang(true)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-50 ${pengaturanBerubah ? "border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100" : "border-line bg-surface hover:bg-surface-muted"}`}
+          >
+            {menulisUlang ? <Loader2 size={14} className="animate-spin" /> : <PenLine size={14} />} {menulisUlang ? "Menulis ulang..." : `Tulis ulang naskah · ${NASKAH_COST} kredit`}
+          </button>
         </div>
       </div>
+      {pengaturanBerubah && (
+        <p role="status" className="-mt-2 flex flex-wrap items-center gap-2 text-sm text-amber-900">
+          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold">Ada perubahan pengaturan</span>
+          Pengaturan komik diubah sesudah naskah ini ditulis. Klik <b>Tulis ulang naskah</b> agar naskah mengikuti pengaturan yang baru.
+        </p>
+      )}
+      <DialogKonfirmasi
+        buka={konfirmasiUlang}
+        judul="Tulis ulang naskah?"
+        labelOk={`Tulis ulang · ${NASKAH_COST} kredit`}
+        bahaya
+        onOk={tulisUlang}
+        onBatal={() => setKonfirmasiUlang(false)}
+      >
+        Naskah ditulis dari awal dengan pengaturan sekarang. Semua suntingan di naskah ini akan hilang dan memakai {NASKAH_COST} kredit; kredit dikembalikan bila gagal.
+      </DialogKonfirmasi>
       {salin && (
         <p role={salin.ok ? "status" : "alert"} className={`-mt-3 text-sm ${salin.ok ? "text-emerald-700" : "text-red-700"}`}>
           {salin.teks}
@@ -352,15 +404,15 @@ function Review({
       )}
 
       {mode === "baca" && (
-        <div className="rounded-xl border border-line bg-surface p-5 sm:p-8">
+        <div className="rounded-2xl bg-surface p-6 sm:p-12">
           <BacaNaskah halaman={halaman} flags={flags} keEdit={() => setMode("edit")} />
         </div>
       )}
 
       {mode === "edit" &&
         halaman.map((h) => (
-        <section key={h.urutan} aria-label={`Halaman ${h.urutan}`} className="rounded-xl border border-line bg-surface p-4">
-          <h2 className="text-lg font-semibold">Halaman {h.urutan}</h2>
+        <section key={h.urutan} aria-label={`Halaman ${h.urutan}`} className="rounded-2xl bg-surface p-6 sm:p-10">
+          <h2 className="text-xl font-bold">{h.sampul ? "Sampul" : `Halaman ${h.urutan}`}</h2>
           <div className="mt-2">
             <p className="text-xs font-medium text-gray-600">Layout panel</p>
             <div role="group" aria-label={`Layout halaman ${h.urutan}`} className="mt-1 flex flex-wrap gap-1.5">
@@ -369,14 +421,14 @@ function Review({
               ))}
             </div>
           </div>
-          <div className="mt-3 flex flex-col gap-4">
+          <div className="mt-6 flex flex-col gap-8">
             {[...h.panel]
               .sort((a, b) => a.urutan - b.urutan)
               .map((p) => {
                 const panelFlags = flags.filter((f) => f.halaman === h.urutan && f.panel === p.urutan);
                 const find = (s: Script) => s.halaman.find((x) => x.urutan === h.urutan)!.panel.find((x) => x.urutan === p.urutan)!;
                 return (
-                  <div key={p.urutan} className={`rounded-lg border p-3 ${panelFlags.length ? "border-amber-300" : "border-line"}`}>
+                  <div key={p.urutan} className={`border-l-2 pl-4 ${panelFlags.length ? "border-amber-300" : "border-transparent"}`}>
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold">Panel {p.urutan}</p>
                       {h.panel.length > 1 && (
@@ -401,7 +453,7 @@ function Review({
                       maxLength={1000}
                       value={p.adegan}
                       onChange={(e) => ubah((s) => void (find(s).adegan = e.target.value))}
-                      className="mt-1 w-full rounded border border-line px-2 py-1.5 text-sm"
+                      className={`${FIELD} mt-1 w-full`}
                     />
 
                     <div className="mt-2 flex flex-col gap-2">
@@ -409,26 +461,27 @@ function Review({
                         const kata = wordCount(d.teks);
                         return (
                           <div key={di} className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-2">
-                            <div className="flex gap-2 sm:w-48 sm:shrink-0">
+                            <div className="flex gap-1 sm:w-56 sm:shrink-0">
                               <input
                                 aria-label="Nama karakter"
                                 value={d.karakter}
                                 maxLength={60}
                                 onChange={(e) => ubah((s) => void (find(s).dialog[di].karakter = e.target.value))}
-                                className="w-full rounded border border-line px-2 py-1 text-sm"
+                                className={`${FIELD} min-w-0 flex-1`}
                               />
-                              <select
+                              <Dropdown
+                                wadah="w-28 shrink-0"
                                 aria-label="Jenis balon"
                                 value={d.jenis}
                                 onChange={(e) => ubah((s) => void (find(s).dialog[di].jenis = e.target.value as typeof d.jenis))}
-                                className="rounded border border-line px-1 py-1 text-sm"
+                                className={`${FIELD}`}
                               >
                                 {Object.entries(JENIS_LABEL).map(([k, v]) => (
                                   <option key={k} value={k}>
                                     {v}
                                   </option>
                                 ))}
-                              </select>
+                              </Dropdown>
                             </div>
                             <div className="flex-1">
                               <div className="flex items-start gap-1">
@@ -438,7 +491,7 @@ function Review({
                                   maxLength={300}
                                   value={d.teks}
                                   onChange={(e) => ubah((s) => void (find(s).dialog[di].teks = e.target.value))}
-                                  className={`w-full rounded border px-2 py-1 text-sm ${kata > MAX_BALLOON_WORDS || !d.teks.trim() ? "border-amber-400" : "border-line"}`}
+                                  className={`${FIELD} w-full ${kata > MAX_BALLOON_WORDS || !d.teks.trim() ? "!border-amber-400" : ""}`}
                                 />
                                 <button
                                   type="button"
@@ -543,20 +596,23 @@ function Review({
 export function NaskahView(props: Props) {
   const { comicId, judul, ringkasan, status, naskah, flags, versi, saldo, adaHalamanEditor } = props;
   const gaya = GAYA.find((g) => g.id === ringkasan.gaya)?.nama ?? "-";
+  // jumlah halaman nyata dari naskah (pengaturan otomatis tidak punya angka tetap)
+  const jumlahHalaman = naskah ? `${naskah.halaman.length} halaman${ringkasan.halamanOtomatis ? " (otomatis)" : ""}` : ringkasan.halamanOtomatis ? "halaman otomatis" : `${ringkasan.jumlahHalaman} halaman`;
+  const sumber = ringkasan.sumber === "cerita" ? "dari cerita yang ditempel" : ringkasan.adaMateri ? "dari PDF materi" : `topik: ${ringkasan.topik ?? "-"}`;
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
+    <main className="mx-auto max-w-5xl p-6">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm text-gray-500">Naskah</p>
           <h1 className="text-2xl font-bold">{judul}</h1>
         </div>
-        <Link href={`/comics/${comicId}/wizard`} className="text-sm underline">
-          Ubah pengaturan
+        <Link href={`/comics/${comicId}/wizard`} className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-3.5 py-2 text-sm font-medium hover:bg-surface-muted">
+          <Settings2 size={15} /> Ubah pengaturan
         </Link>
       </div>
       <p className="mt-1 text-sm text-gray-600">
-        SD kelas {ringkasan.jenjang} · {ringkasan.jumlahHalaman} halaman · {gaya} · {ringkasan.adaMateri ? "dari PDF materi" : `topik: ${ringkasan.topik ?? "-"}`} ·
+        SD kelas {ringkasan.jenjang} · {jumlahHalaman} · {gaya} · {sumber} ·
         saldo {saldo} kredit
       </p>
 
@@ -564,7 +620,7 @@ export function NaskahView(props: Props) {
         {status === "generating" && <Generating />}
 
         {status === "review" && naskah && (
-          <Review key={versi} comicId={comicId} judul={judul} gayaId={ringkasan.gaya} tokoh={props.tokoh ?? []} naskahAwal={naskah} flagsAwal={flags} adaHalamanEditor={adaHalamanEditor} saldo={saldo} simpanNaskah={props.simpanNaskah} />
+          <Review key={versi} comicId={comicId} judul={judul} gayaId={ringkasan.gaya} tokoh={props.tokoh ?? []} ukuran={props.ukuran} naskahAwal={naskah} flagsAwal={flags} adaHalamanEditor={adaHalamanEditor} saldo={saldo} pengaturanBerubah={props.pengaturanBerubah} simpanNaskah={props.simpanNaskah} />
         )}
 
         {status === "approved" && (

@@ -16,10 +16,16 @@ describe("galatHalamanJpeg", () => {
   it("menerima JPEG 3:4 berukuran wajar dan menolak sisanya", () => {
     expect(galatHalamanJpeg({ format: "jpeg", width: 1350, height: 1800 })).toBeNull();
     expect(galatHalamanJpeg({ format: "png", width: 1350, height: 1800 })).toMatch(/JPEG/);
-    expect(galatHalamanJpeg({ format: "jpeg", width: 1800, height: 1800 })).toMatch(/3:4/);
+    expect(galatHalamanJpeg({ format: "jpeg", width: 1800, height: 1800 })).toMatch(/Rasio/);
     expect(galatHalamanJpeg({ format: "jpeg", width: 100, height: 133 })).toMatch(/tidak wajar/);
     expect(galatHalamanJpeg({ format: "jpeg", width: 9000, height: 12000 })).toMatch(/tidak wajar/);
     expect(galatHalamanJpeg(null)).toMatch(/JPEG/);
+  });
+
+  it("rasio mengikuti ukuran halaman komik", () => {
+    expect(galatHalamanJpeg({ format: "jpeg", width: 1800, height: 1800 }, { w: 1200, h: 1200 })).toBeNull();
+    expect(galatHalamanJpeg({ format: "jpeg", width: 1800, height: 1350 }, { w: 1200, h: 900 })).toBeNull();
+    expect(galatHalamanJpeg({ format: "jpeg", width: 1350, height: 1800 }, { w: 1200, h: 900 })).toMatch(/1200 x 900/);
   });
 });
 
